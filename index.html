@@ -135,18 +135,40 @@
     20% { transform: translateX(-14px); } 40% { transform: translateX(12px); }
     60% { transform: translateX(-8px); }  80% { transform: translateX(5px); }
   }
-  .particle { position: absolute; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
+  .particle { position: fixed; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
 
-  .rank { display: inline-block; font-weight: bold; font-family: Menlo, Consolas, monospace; }
+  .rank { display: inline-block; font-weight: 900; letter-spacing: .05em; }
+  .legend {
+    background: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6ee08a, #4facfe, #b86bff, #ff5f6d);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
+    color: transparent !important; animation: rainbow 1.5s linear infinite;
+  }
+  @keyframes rainbow { to { background-position: 200% 0; } }
+  .glow { text-shadow: 0 0 18px currentColor; }
+  .fb-best {
+    display: inline-block; margin-top: 8px; padding: 2px 12px; border-radius: 999px;
+    background: var(--accent); color: #222; font-size: 18px; font-weight: bold;
+  }
+  .reveal { animation: reveal .7s cubic-bezier(.2, 1.6, .4, 1) both; }
+  @keyframes reveal { 0% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .rankup { color: var(--accent); font-weight: bold; font-size: 20px; }
+  .ladder { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 16px; }
+  .ladder div {
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); color: var(--dim); font-size: 14px;
+  }
+  .ladder div.reached { color: #222; border-color: transparent; }
+  .ladder div.me { outline: 3px solid var(--text); font-weight: bold; transform: scale(1.12); }
   #restResult { margin: 0 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
   #restResult:empty { display: none; }
-  #restResult .rank { font-size: 48px; line-height: 1; }
+  #restResult .rank { font-size: 52px; line-height: 1.2; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; text-align: center; line-height: 1.3; }
   .card .v { font-size: 30px; font-weight: bold; margin: 4px 0; }
   .card .s { font-size: 13px; color: var(--dim); }
-  .card.big .v { font-size: 56px; }
+  .card.big .v { font-size: 34px; }
+  .card.big { grid-column: 1 / -1; padding: 20px; }
+  .card.big .v { font-size: 64px; line-height: 1.2; }
   .comment { font-size: 20px; margin: 4px 0 12px; }
   .bars { max-width: 560px; margin: 8px 0 16px; }
   .bars .b { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
@@ -177,7 +199,7 @@
       <button id="startBtn" class="primary" type="button">開始</button>
     </div>
     <p class="error" id="setupError"></p>
-    <p>1回ごとにタイムと評価が出ます。連続で正解するとコンボ。最後に総合ランクが出るので、Sランクを狙ってください。</p>
+    <p>1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。目指せレジェンド。</p>
     <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。</p>
   </div>
 </section>
@@ -251,18 +273,26 @@ const ALL_CODES = new Set(Object.keys(KEY_LABEL));
 
 // 評価の目安(ms)。選択肢が多いほど遅くなるのが普通なので、条件ごとに分ける
 const GRADE = {
-  1: [180, 220, 270, 330],
-  2: [250, 300, 360, 430],
-  4: [320, 380, 450, 530],
-  8: [380, 450, 530, 620]
+  1: [170, 200, 230, 270, 320, 380],
+  2: [230, 270, 310, 360, 420, 500],
+  4: [290, 340, 390, 450, 520, 600],
+  8: [350, 400, 460, 520, 600, 690]
 };
+// 上から順に高いランク。いちばん下でも「プロ」
 const RANKS = [
-  { rank: 'S', label: '神速',     color: '#ff6bd6' },
-  { rank: 'A', label: 'はやい！', color: '#ffd400' },
-  { rank: 'B', label: 'いいね',   color: '#6ee08a' },
-  { rank: 'C', label: 'ふつう',   color: '#7ab8ff' },
-  { rank: 'D', label: 'おそい',   color: '#9a9a9a' }
+  { name: 'レジェンド',   color: '#ff6bd6' },
+  { name: 'マスター',     color: '#ff6bd6' },
+  { name: 'エキスパート', color: '#ff9f43' },
+  { name: 'エリート',     color: '#ffd400' },
+  { name: 'ハイパー',     color: '#6ee08a' },
+  { name: 'スーパー',     color: '#7ab8ff' },
+  { name: 'プロ',         color: '#c8c8c8' }
 ];
+// ランク名の表示（レジェンドは虹色）
+function rankHTML(g, extra = '') {
+  const legend = g === RANKS[0];
+  return `<span class="rank ${legend ? 'legend' : 'glow'} ${extra}" style="color:${g.color}">${g.name}</span>`;
+}
 function grade(n, ms) {
   const i = GRADE[n].findIndex(t => ms < t);
   return RANKS[i < 0 ? RANKS.length - 1 : i];
@@ -340,6 +370,7 @@ const sfxHit = (level, combo) => {
   if (level === 0) tone(base * 2, .25, 'triangle', .1, null, .14);
 };
 const sfxMiss = () => tone(180, .3, 'sawtooth', .1, 80);
+const sfxBest = () => [880, 1175, 1568].forEach((f, i) => tone(f, .18, 'triangle', .09, null, .25 + i * .07));
 const sfxFanfare = () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .1, null, i * .12));
 
 function retrigger(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
@@ -365,6 +396,24 @@ function burst(lamp, color, count) {
       { transform: 'translate(0,0) scale(1)', opacity: 1 },
       { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }
     ], { duration: 500 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => p.remove();
+  }
+}
+
+// 画面全体に紙吹雪
+function confetti(count = 120) {
+  const colors = ['#ff5f6d', '#ffc371', '#f9f871', '#6ee08a', '#4facfe', '#b86bff'];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.background = colors[i % colors.length];
+    p.style.borderRadius = '2px';
+    p.style.left = Math.random() * 100 + 'vw'; p.style.top = '-12px';
+    document.body.appendChild(p);
+    const dx = (Math.random() - .5) * 200, rot = Math.random() * 720;
+    p.animate([
+      { transform: 'translate(0,0) rotate(0)', opacity: 1 },
+      { transform: `translate(${dx}px, 105vh) rotate(${rot}deg)`, opacity: .9 }
+    ], { duration: 1800 + Math.random() * 1500, delay: Math.random() * 400, easing: 'cubic-bezier(.3,.6,.6,1)' }).onfinish = () => p.remove();
   }
 }
 
@@ -398,7 +447,9 @@ function startExperiment() {
     rows: [],
     combo: 0,
     maxCombo: 0,
-    lastBlock: null
+    lastBlock: null,
+    best: {},           // 条件ごとの本番の最速
+    prevBlockLevel: null
   };
   initAudio();
   downloaded = false;
@@ -418,6 +469,7 @@ function showRest() {
     $('#restText').innerHTML = `次は<b>本番${MAIN_TRIALS}回</b>です。使うキー：${keys}`;
   }
   $('#restResult').innerHTML = S.lastBlock || '';
+  if (S.lastBlock) confetti(80);
   S.lastBlock = null;
   buildLamps($('#restLamps'), n);
   showScreen('rest');
@@ -510,10 +562,20 @@ function onResponse(code, t) {
     record('正答', rt);
     setCombo(S.combo + 1);
     const g = grade(n, rt), level = RANKS.indexOf(g);
+    // 本番での自己ベスト更新（各条件の2回目以降の正答から）
+    let newBest = false;
+    if (S.phase === 'main') {
+      newBest = S.best[n] != null && rt < S.best[n];
+      if (S.best[n] == null || rt < S.best[n]) S.best[n] = rt;
+    }
     S.lamps[T.target].classList.add('hit');
-    burst(S.lamps[T.target], g.color, 24 - level * 4);
+    burst(S.lamps[T.target], g.color, level === 0 ? 50 : 30 - level * 3);
     sfxHit(level, S.combo);
-    showFeedback(`<div class="fb-ms">${Math.round(rt)}<small>ms</small></div><div class="fb-label">${g.label}</div>`, g.color);
+    if (newBest) sfxBest();
+    if (level === 0) confetti(60);
+    showFeedback(`<div class="fb-ms">${Math.round(rt)}<small>ms</small></div>
+      <div class="fb-label">${rankHTML(g)}${level <= 1 ? '！！' : '！'}</div>
+      ${newBest ? '<div class="fb-best">自己ベスト更新！</div>' : ''}`, g.color);
   }
   endTrial(true);
 }
@@ -545,9 +607,13 @@ function blockDone() {
   }
   const n = currentN(), avg = average(n);
   if (avg != null) {
-    const g = blockGrade(n, avg);
-    S.lastBlock = `<div class="rank" style="color:${g.color}">${g.rank}</div>
-      <div>${n}択の本番おわり！ 平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}</div>`;
+    const g = blockGrade(n, avg), level = RANKS.indexOf(g);
+    const up = S.prevBlockLevel != null && level < S.prevBlockLevel;
+    S.prevBlockLevel = level;
+    S.lastBlock = `<div class="dim">${n}択のランク</div>
+      <div>${rankHTML(g, 'reveal')}</div>
+      ${up ? '<div class="rankup">▲ ランクアップ！</div>' : ''}
+      <div>平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　最速 <b>${Math.round(S.best[n])}ms</b></div>`;
     sfxFanfare();
   }
   S.condIdx++;
@@ -636,7 +702,10 @@ function showResults() {
   const maxAvg = Math.max(...avgs.filter(v => v != null), 1);
   $('#summary').innerHTML = `
     <div class="cards">
-      <div class="card big"><div class="s">総合ランク</div><div class="v rank" style="color:${total.color}">${total.rank}</div></div>
+      <div class="card big"><div class="s">総合ランク</div><div class="v">${rankHTML(total, 'reveal')}</div>
+        <div class="ladder" style="justify-content:center;margin:12px 0 0">${RANKS.slice().reverse().map(g =>
+          `<div class="${RANKS.indexOf(g) >= RANKS.indexOf(total) ? 'reached' : ''} ${g === total ? 'me' : ''}"
+            style="${RANKS.indexOf(g) >= RANKS.indexOf(total) ? `background:${g.color}` : ''}">${g.name}</div>`).join('')}</div></div>
       <div class="card"><div class="s">最速</div><div class="v">${fastest ? Math.round(fastest.rt) + 'ms' : '－'}</div><div class="s">${fastest ? fastest.n + '択' : ''}</div></div>
       <div class="card"><div class="s">正答率</div><div class="v">${S.rows.length ? Math.round(used.length / S.rows.length * 100) : 0}%</div></div>
       <div class="card"><div class="s">最大コンボ</div><div class="v">${S.maxCombo}</div></div>
@@ -646,6 +715,7 @@ function showResults() {
     <div class="bars">${CONDITIONS.map((n, i) => `<div class="b"><span>${n}択</span>
       <div class="fill" style="width:${avgs[i] == null ? 0 : avgs[i] / maxAvg * 70}%"></div><span>${fmtAvg(avgs[i])}</span></div>`).join('')}</div>`;
   sfxFanfare();
+  confetti(RANKS.indexOf(total) <= 2 ? 250 : 120);
 }
 
 // ===== CSV（画面と同じ表） =====
