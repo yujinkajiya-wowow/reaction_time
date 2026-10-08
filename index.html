@@ -251,7 +251,7 @@
     </div>
     <p class="error" id="setupError"></p>
     <p>1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。速さとコンボでゲージがたまると<b>フィーバー</b>！ 目指せレジェンド。</p>
-    <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。</p>
+    <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。<span class="key">Esc</span> でいつでもこの画面に戻れます。</p>
   </div>
 </section>
 
@@ -640,6 +640,7 @@ function updateProgress() {
 }
 
 let waitTimer = null, timeoutTimer = null, flashToken = 0;
+let runId = 0; // Esc で最初の画面に戻ったら増やして、残っている予約処理を無効にする
 let T = null; // 現在の試行
 
 function startTrial() {
@@ -686,7 +687,8 @@ function onFalseStart() {
   $('#fix').classList.add('hidden');
   missEffect('フライング！');
   $('#msg').textContent = '光ってから押してください';
-  setTimeout(() => { $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
+  const id = runId;
+  setTimeout(() => { if (id !== runId) return; $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
 }
 
 function onResponse(code, t) {
@@ -744,7 +746,9 @@ function endTrial(keepLamp = false) {
   const voice = voiceDone;
   voiceDone = Promise.resolve();
   // 演出の時間(ITI)とボイスの両方が終わってから次へ。しゃべっている途中で「＋」が出ないようにする
+  const id = runId;
   Promise.all([new Promise(res => setTimeout(res, ITI)), voice]).then(() => {
+    if (id !== runId) return;
     if (S.fever > 0) { S.fever--; updateGauge(); }
     S.trialIdx++;
     if (S.trialIdx < S.targets.length) startTrial();
@@ -779,6 +783,7 @@ function blockDone() {
 // 反応は「光ったマスのキーを押す」ことで行う（光ってから押すまでの時間を測る）
 document.addEventListener('keydown', e => {
   const t = performance.now();
+  if (e.code === 'Escape' && state !== 'setup') { e.preventDefault(); escToHome(); return; }
   if (state === 'setup' || state === 'results') return;
   if (e.code === 'Space' || ALL_CODES.has(e.code)) e.preventDefault();
   if (e.repeat) return; // 押しっぱなしの連続入力は無視
@@ -905,13 +910,40 @@ $('#subjectId').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) startExperiment();
 });
 $('#csvBtn').addEventListener('click', downloadCSV);
-$('#againBtn').addEventListener('click', () => {
-  if (!downloaded && !confirm('CSVをまだダウンロードしていません。データを消して次の被験者に進みますか？')) return;
+// 実験を止めて最初の画面に戻る
+function goHome() {
+  runId++;
+  clearTimeout(waitTimer); clearTimeout(timeoutTimer);
+  flashToken++;
+  stopLoudEffects();
+  $('#fb').classList.remove('show');
+  $('#msg').textContent = '';
   S = null;
   $('#subjectId').value = '';
   state = 'setup';
   showScreen('setup');
   $('#subjectId').focus();
+}
+
+function escToHome() {
+  const unsaved = S && S.rows.length && !downloaded;
+  if (unsaved) {
+    const wasRunning = state === 'fixation' || state === 'response';
+    if (!confirm('最初の画面に戻りますか？\nCSVをまだダウンロードしていないので、ここまでの記録は消えます。')) {
+      // 確認ダイアログで止まっていた試行は記録せずにやり直す
+      if (wasRunning && (state === 'fixation' || state === 'response')) {
+        clearTimeout(waitTimer); clearTimeout(timeoutTimer); flashToken++;
+        startTrial();
+      }
+      return;
+    }
+  }
+  goHome();
+}
+
+$('#againBtn').addEventListener('click', () => {
+  if (!downloaded && !confirm('CSVをまだダウンロードしていません。データを消して次の被験者に進みますか？')) return;
+  goHome();
 });
 
 const soundBtn = $('#soundBtn');
@@ -926,7 +958,10 @@ soundBtn.addEventListener('click', () => {
 const fsBtn = $('#fsBtn');
 fsBtn.addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen()
+    // 全画面中も Esc をページで受け取れるようにする（対応ブラウザのみ。Esc 長押しで全画面解除）
+    .then(() => navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']))
+    .catch(() => {});
   fsBtn.blur(); // スペースキーでボタンが反応しないように
 });
 document.addEventListener('fullscreenchange', () => {
