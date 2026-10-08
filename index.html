@@ -159,6 +159,9 @@
   #gaugeTrack { height: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #1f1f1f; }
   #gaugeFill { height: 100%; width: 0; background: linear-gradient(90deg, #ff9f43, #ff5f6d); transition: width .35s; }
   #trial.fever #gaugeLabel { color: var(--accent); }
+  #gaugeTrack.drop { animation: drop .5s; }
+  @keyframes drop { 0%, 60% { border-color: #ff5252; box-shadow: 0 0 14px #ff5252; } 100% { border-color: var(--line); box-shadow: none; } }
+  .fb-pen { font-size: 18px; margin-top: 8px; color: #ff8a80; }
   #trial.fever #gaugeFill { background: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6ee08a, #4facfe, #b86bff); }
 
   /* やかましい演出は反応後の短い時間だけ（.fever-live）。「＋」が出たら止める */
@@ -240,7 +243,7 @@
     <ul>
       <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
       <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
-      <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。</li>
+      <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。ミスするとフィーバーゲージが大きく減り、フィーバー中なら終わってしまいます。</li>
       <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が3回あります。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
@@ -264,6 +267,9 @@
     <div id="restLamps" class="lamps"></div>
     <p class="dim">使うキーに指をのせて待ち、光ったマスのキーを押します。</p>
     <p class="start-hint">準備ができたら <span class="key">スペース</span> キーで開始</p>
+    <p id="morePractice" hidden>
+      <button id="morePracticeBtn" type="button">もう少し練習する（<span class="key">P</span>）</button>
+    </p>
   </div>
 </section>
 
@@ -486,8 +492,6 @@ function stopVoice() {
   if (playingVoice) { playingVoice.pause(); playingVoice.currentTime = 0; playingVoice = null; }
 }
 
-// 再生し終わる（か、最大2.5秒たつ）と解決する。次の試行はこれを待ってから始める
-let voiceDone = Promise.resolve();
 function comboVoice(combo) {
   const line = VOICE_LINES.find(l => combo >= l.min);
   const el = $('#voice');
@@ -501,17 +505,11 @@ function comboVoice(combo) {
   el.style.setProperty('--rot', (right ? -1 : 1) * (8 + Math.random() * 6) + 'deg');
   retrigger(el, 'show');
   stopVoice();
-  if (!soundOn) { voiceDone = Promise.resolve(); return; }
-  const a = line.audio;
-  playingVoice = a;
-  a.currentTime = 0;
-  voiceDone = new Promise(res => {
-    const t = setTimeout(done, 2500);
-    function done() { clearTimeout(t); a.removeEventListener('ended', done); a.removeEventListener('error', done); res(); }
-    a.addEventListener('ended', done);
-    a.addEventListener('error', done);
-    a.play().catch(done);
-  });
+  if (!soundOn) return;
+  // 次の試行はボイスを待たずにいつもの間隔で始める（しゃべり終わるまで音は流れる）
+  playingVoice = line.audio;
+  playingVoice.currentTime = 0;
+  playingVoice.play().catch(() => {});
 }
 
 function setCombo(v) {
@@ -542,10 +540,22 @@ function addScore(level) {
   }
   updateGauge();
 }
-function loseScore() {
-  if (S.fever > 0) return;
-  S.gauge = Math.max(0, S.gauge - 20);
+// ミスしたときにゲージから引く量。フィーバー中のミスはその場でフィーバー終了
+const PENALTY = { wrong: 50, falseStart: 40, anticipation: 40, timeout: 30 };
+function loseScore(kind) {
+  let note;
+  if (S.fever > 0) {
+    S.fever = 0;
+    S.gauge = 0;
+    note = 'FEVER 終了…';
+  } else {
+    const before = S.gauge;
+    S.gauge = Math.max(0, S.gauge - PENALTY[kind]);
+    if (before > 0) note = `ゲージ −${Math.round(before - S.gauge)}`;
+  }
+  retrigger($('#gaugeTrack'), 'drop');
   updateGauge();
+  return note;
 }
 // 反応後の待ち時間にだけ鳴らす・光らせる
 function feverEffect() {
@@ -562,16 +572,15 @@ function feverEffect() {
 function stopLoudEffects() {
   $('#trial').classList.remove('fever-live');
   $('#voice').classList.remove('show');
-  stopVoice();
   document.querySelectorAll('.particle').forEach(p => p.remove()); // 紙吹雪が「＋」の間に残らないように
 }
 
-function missEffect(text) {
-  loseScore();
+function missEffect(text, kind) {
+  const note = loseScore(kind);
   setCombo(0);
   retrigger($('#trial'), 'shake');
   sfxMiss();
-  showFeedback(`<div class="fb-label">${text}</div>`, '#ff8a80');
+  showFeedback(`<div class="fb-label">${text}</div>${note ? `<div class="fb-pen">${note}</div>` : ''}`, '#ff8a80');
 }
 
 // ===== 実験の流れ =====
@@ -589,11 +598,15 @@ function startExperiment() {
     combo: 0,
     maxCombo: 0,
     lastBlock: null,
-    best: {},
+    best: {},           // 条件ごとの本番の最速
     gauge: 0,           // フィーバーゲージ(0〜100)
     fever: 0,           // フィーバーの残り試行数
-    feverStart: false,           // 条件ごとの本番の最速
-    prevBlockLevel: null
+    feverStart: false,
+    prevBlockLevel: null,
+    practiceKind: '練習', // 練習 / 追加練習
+    extraPractice: {},    // 条件ごとの追加練習の回数
+    falseStarts: {},      // 条件ごとの本番のフライング回数
+    log: []               // 練習・フライングも含めた全試行の記録（CSV用）
   };
   initAudio();
   downloaded = false;
@@ -612,12 +625,22 @@ function showRest() {
     $('#restTitle').textContent = `練習おわり（${n}択）`;
     $('#restText').innerHTML = `次は<b>本番${MAIN_TRIALS}回</b>です。使うキー：${keys}`;
   }
+  $('#morePractice').hidden = S.phase !== 'main';
+  if (S.phase === 'main' && S.extraPractice[n]) $('#restText').innerHTML += `<br><span class="dim">（追加練習 ${S.extraPractice[n]}回目おわり）</span>`;
   $('#restResult').innerHTML = S.lastBlock || '';
   if (S.lastBlock) confetti(80);
   S.lastBlock = null;
   buildLamps($('#restLamps'), n);
   showScreen('rest');
   state = 'rest';
+}
+
+function morePractice() {
+  const n = currentN();
+  S.extraPractice[n] = (S.extraPractice[n] || 0) + 1;
+  S.phase = 'practice';
+  S.practiceKind = '追加練習';
+  beginBlock();
 }
 
 function beginBlock() {
@@ -634,7 +657,7 @@ function beginBlock() {
 }
 
 function updateProgress() {
-  const label = S.phase === 'practice' ? '練習' : '本番';
+  const label = S.phase === 'practice' ? S.practiceKind : '本番';
   $('#progress').textContent = `${currentN()}択　${label} ${S.trialIdx + 1} / ${S.targets.length}`;
   $('#bar').style.width = (S.trialIdx / S.targets.length * 100) + '%';
 }
@@ -656,6 +679,8 @@ function beginWait() {
   state = 'fixation';
   $('#fix').classList.remove('hidden');
   const wait = WAIT_MIN + Math.random() * (WAIT_MAX - WAIT_MIN);
+  T.wait = wait;
+  T.fixOnset = performance.now();
   waitTimer = setTimeout(flash, wait);
 }
 
@@ -675,17 +700,39 @@ function flash() {
   });
 }
 
-function record(result, rt) {
-  if (S.phase !== 'main') return; // 練習は記録しない
+// 試行ごとの細かい記録（練習・フライングも含む）。CSVの後半に出す
+function logTrial(result, rt, code, t) {
+  const n = currentN();
+  S.log.push({
+    set: S.condIdx + 1, n,
+    phase: S.phase === 'main' ? '本番' : S.practiceKind,
+    trialNo: S.trialIdx + 1,
+    result, rt,
+    target: result === 'フライング' ? '' : KEY_LABEL[KEYMAP[n][T.target]], // フライングはまだ光っていない
+    pressed: code ? KEY_LABEL[code] : '',
+    wait: T.wait,
+    sinceFix: t != null ? t - T.fixOnset : null,
+    fever: S.fever > 0,
+    clock: new Date()
+  });
+}
+
+function record(result, rt, code, t) {
+  logTrial(result === '正答' && rt < ANTICIPATION ? '予測' : result, rt, code, t);
+  S.log[S.log.length - 1].combo = null; // 反応後のコンボはあとで入れる
+  if (S.phase !== 'main') return; // 平均の表には本番だけ
   S.rows.push({ n: currentN(), trialNo: S.trialIdx + 1, result, rt });
 }
 
-function onFalseStart() {
+function onFalseStart(code, t) {
+  logTrial('フライング', null, code, t);
+  if (S.phase === 'main') S.falseStarts[currentN()] = (S.falseStarts[currentN()] || 0) + 1;
   clearTimeout(waitTimer);
   flashToken++;
   state = 'iti';
   $('#fix').classList.add('hidden');
-  missEffect('フライング！');
+  missEffect('フライング！', 'falseStart');
+  S.log[S.log.length - 1].combo = S.combo;
   $('#msg').textContent = '光ってから押してください';
   const id = runId;
   setTimeout(() => { if (id !== runId) return; $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
@@ -698,16 +745,16 @@ function onResponse(code, t) {
   const rt = t - onset;
   const n = currentN();
   const keys = KEYMAP[n];
-  if (rt > TIMEOUT) { record('時間切れ', null); missEffect('時間切れ…'); }
+  if (rt > TIMEOUT) { record('時間切れ', null, code, t); missEffect('時間切れ…', 'timeout'); }
   else if (code !== keys[T.target]) {
-    record('誤答', rt);
+    record('誤答', rt, code, t);
     S.lamps[keys.indexOf(code)].classList.add('miss');
-    missEffect('ちがうキー！');
+    missEffect('ちがうキー！', 'wrong');
   } else if (rt < ANTICIPATION) {
-    record('正答', rt);
-    missEffect('はやすぎ（予測）');
+    record('正答', rt, code, t);
+    missEffect('はやすぎ（予測）', 'anticipation');
   } else {
-    record('正答', rt);
+    record('正答', rt, code, t);
     setCombo(S.combo + 1);
     comboVoice(S.combo);
     const g = grade(n, rt), level = RANKS.indexOf(g);
@@ -728,14 +775,16 @@ function onResponse(code, t) {
       ${newBest ? '<div class="fb-best">自己ベスト更新！</div>' : ''}`, g.color);
   }
   feverEffect();
+  S.log[S.log.length - 1].combo = S.combo;
   endTrial(true);
 }
 
 function onTimeout() {
   if (state !== 'response') return;
   flashToken++;
-  record('時間切れ', null);
-  missEffect('時間切れ…');
+  record('時間切れ', null, null, null);
+  missEffect('時間切れ…', 'timeout');
+  S.log[S.log.length - 1].combo = S.combo;
   endTrial();
 }
 
@@ -743,17 +792,14 @@ function endTrial(keepLamp = false) {
   state = 'iti';
   S.lamps.forEach(l => { if (!keepLamp) l.classList.remove('on'); });
   $('#fix').classList.add('hidden');
-  const voice = voiceDone;
-  voiceDone = Promise.resolve();
-  // 演出の時間(ITI)とボイスの両方が終わってから次へ。しゃべっている途中で「＋」が出ないようにする
   const id = runId;
-  Promise.all([new Promise(res => setTimeout(res, ITI)), voice]).then(() => {
+  setTimeout(() => {
     if (id !== runId) return;
     if (S.fever > 0) { S.fever--; updateGauge(); }
     S.trialIdx++;
     if (S.trialIdx < S.targets.length) startTrial();
     else blockDone();
-  });
+  }, ITI);
 }
 
 function blockDone() {
@@ -770,11 +816,12 @@ function blockDone() {
     S.lastBlock = `<div class="dim">${n}択のランク</div>
       <div>${rankHTML(g, 'reveal')}</div>
       ${up ? '<div class="rankup">▲ ランクアップ！</div>' : ''}
-      <div>平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　最速 <b>${Math.round(S.best[n])}ms</b></div>`;
+      <div>平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　フライング ${S.falseStarts[n] || 0}回　最速 <b>${Math.round(S.best[n])}ms</b></div>`;
     sfxFanfare();
   }
   S.condIdx++;
   S.phase = 'practice';
+  S.practiceKind = '練習';
   if (S.condIdx < S.order.length) showRest();
   else showResults();
 }
@@ -782,14 +829,16 @@ function blockDone() {
 // ===== キー入力 =====
 // 反応は「光ったマスのキーを押す」ことで行う（光ってから押すまでの時間を測る）
 document.addEventListener('keydown', e => {
-  const t = performance.now();
+  // キーイベントが発生した時刻（光った時刻と同じ performance.now() の基準）。処理の遅れを含まない
+  const t = e.timeStamp || performance.now();
   if (e.code === 'Escape' && state !== 'setup') { e.preventDefault(); escToHome(); return; }
   if (state === 'setup' || state === 'results') return;
   if (e.code === 'Space' || ALL_CODES.has(e.code)) e.preventDefault();
   if (e.repeat) return; // 押しっぱなしの連続入力は無視
   if (state === 'rest' && e.code === 'Space') { beginBlock(); return; }
+  if (state === 'rest' && e.code === 'KeyP' && S.phase === 'main') { morePractice(); return; }
   if (!ALL_CODES.has(e.code) || !KEYMAP[currentN()].includes(e.code)) return; // この条件で使わないキーは無視
-  if (state === 'fixation') onFalseStart();          // 光る前に押した
+  if (state === 'fixation') onFalseStart(e.code, t);  // 光る前に押した
   else if (state === 'response') onResponse(e.code, t);
 });
 
@@ -808,11 +857,11 @@ function accuracy(n) {
   return `${rows.filter(isUsed).length} / ${rows.length}`;
 }
 
-// セットの平均にはミスの分だけ少しペナルティを足してランクを決める
+// セットの平均に、ミス（誤答・時間切れ・予測・フライング）1回につき60msを足してランクを決める
 function blockGrade(n, avg) {
   const rows = S.rows.filter(r => r.n === n);
-  const misses = rows.length - rows.filter(isUsed).length;
-  return grade(n, avg + misses * 30);
+  const misses = rows.length - rows.filter(isUsed).length + (S.falseStarts[n] || 0);
+  return grade(n, avg + misses * 60);
 }
 
 function fastComment(ms) {
@@ -849,6 +898,7 @@ function showResults() {
     }).join('') + '</tr>';
   }
   html += '<tr class="avg"><td>平均</td>' + CONDITIONS.map(n => `<td>${fmtAvg(average(n))}</td>`).join('') + '</tr>';
+  html += '<tr><td>フライング</td>' + CONDITIONS.map(n => `<td>${S.falseStarts[n] || 0}回</td>`).join('') + '</tr>';
   $('#resultTable').innerHTML = html;
 
   // 総合ランクなど
@@ -876,25 +926,39 @@ function showResults() {
   confetti(RANKS.indexOf(total) <= 2 ? 250 : 120);
 }
 
-// ===== CSV（画面と同じ表） =====
+// ===== CSV（前半：画面と同じ表、後半：試行ごとの細かい記録） =====
 function csvCell(v) {
   const s = v == null ? '' : String(v);
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 function downloadCSV() {
+  const pad = x => String(x).padStart(2, '0');
+  const fmtDate = d => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const fmtClock = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+  const ms1 = v => v == null ? '' : v.toFixed(1);
   const lines = [
     ['被験者ID', S.id],
+    ['実施日時', fmtDate(S.date)],
     ['実施した順番', orderText()],
+    ['追加練習の回数', ...CONDITIONS.map(n => `${n}択:${S.extraPractice[n] || 0}`)],
     [],
     ['試行', ...CONDITIONS.map(n => `${n}択(ms)`)]
   ];
   for (let i = 1; i <= MAIN_TRIALS; i++) lines.push([i, ...CONDITIONS.map(n => cellText(findRow(n, i)))]);
   lines.push(['平均', ...CONDITIONS.map(n => fmtAvg(average(n)))]);
+  lines.push(['フライング(回)', ...CONDITIONS.map(n => S.falseStarts[n] || 0)]);
+  lines.push([], ['試行ごとの記録（練習・フライングも含む）']);
+  lines.push(['通し番号', 'セット', '条件', '段階', '試行', '結果', '反応時間(ms)', '光ったキー', '押したキー',
+    '待ち時間(ms)', '＋から押すまで(ms)', '反応後のコンボ', 'フィーバー中', '平均に使用', '時刻']);
+  S.log.forEach((L, i) => lines.push([
+    i + 1, L.set, `${L.n}択`, L.phase, L.trialNo, L.result, ms1(L.rt), L.target, L.pressed,
+    ms1(L.wait), ms1(L.sinceFix), L.combo ?? '', L.fever ? '○' : '',
+    L.phase === '本番' && L.result === '正答' ? '○' : '', fmtClock(L.clock)
+  ]));
   const text = lines.map(l => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
   const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' });
   const d = S.date;
-  const pad = x => String(x).padStart(2, '0');
   const fileStamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -906,6 +970,7 @@ function downloadCSV() {
 
 // ===== ボタン類 =====
 $('#startBtn').addEventListener('click', startExperiment);
+$('#morePracticeBtn').addEventListener('click', e => { e.currentTarget.blur(); if (state === 'rest') morePractice(); });
 $('#subjectId').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.isComposing) startExperiment();
 });
