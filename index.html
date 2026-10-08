@@ -15,7 +15,6 @@
     --lamp-off-border: #6a6a6a;
     --lamp-on: #ffe600;
     --accent: #ffd400;
-    --held: #6ee08a;
     --lamp-size: 80px;
     --lamp-gap: 20px;
   }
@@ -63,10 +62,7 @@
   .lamp.on { background: var(--lamp-on); border-color: var(--lamp-on); }
   .lamp-label {
     margin-top: 8px; padding: 0 6px; font-size: 24px; font-family: Menlo, Consolas, monospace; color: var(--text);
-    border-bottom: 4px solid transparent;
   }
-  /* 押しているキー（休憩画面と「全部押してください」のときだけ表示） */
-  .show-held .lamp-wrap.held .lamp-label { color: var(--held); border-bottom-color: var(--held); }
 
   /* 試行画面 */
   #trial { position: fixed; inset: 0; padding: 0; cursor: none; }
@@ -76,10 +72,6 @@
     font-size: 64px; line-height: 1; font-weight: bold; color: var(--text);
   }
   #fix.hidden { visibility: hidden; }
-  #prompt {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    font-size: 22px; white-space: nowrap;
-  }
   #trialLamps { position: absolute; left: 50%; top: calc(50% + 70px); transform: translateX(-50%); }
   #progress { position: absolute; left: 16px; top: 12px; font-size: 14px; color: #777; }
   #msg {
@@ -112,11 +104,11 @@
 <section id="setup" class="screen active">
   <div class="box">
     <h1>反応時間の測定</h1>
-    <p>画面に並んだマスのうち、どれか1つが<b style="color:var(--lamp-on)">黄色</b>に光ります。光ったマスの下に書いてあるキーから、できるだけ速く・正確に<b>指を離して</b>ください。</p>
+    <p>画面に並んだマスのうち、どれか1つが<b style="color:var(--lamp-on)">黄色</b>に光ります。光ったマスの下に書いてあるキーを、できるだけ速く・正確に<b>押して</b>ください。</p>
     <ul>
-      <li>使うキーを<b>全部押したまま</b>、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
-      <li>光ったら、そのキーだけ指を離します。離したキーをもう一度押すと、次の回に進みます。</li>
-      <li>光る前に指を離すと「フライング」になり、その回はやり直しです。</li>
+      <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
+      <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
+      <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。</li>
       <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が5回あります。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
@@ -127,7 +119,6 @@
     </div>
     <p class="error" id="setupError"></p>
     <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。</p>
-    <p class="dim">※ キーボードによっては、8個のキーを同時に押すと全部は認識できないことがあります。休憩画面で、押しているキーが全部緑色になるか確かめてください。</p>
   </div>
 </section>
 
@@ -136,8 +127,8 @@
   <div class="box">
     <h2 id="restTitle"></h2>
     <p id="restText"></p>
-    <div id="restLamps" class="lamps show-held"></div>
-    <p class="dim">使うキーを全部押したまま待ち、光ったマスのキーから指を離します。押しているキーは緑色になります。</p>
+    <div id="restLamps" class="lamps"></div>
+    <p class="dim">使うキーに指をのせて待ち、光ったマスのキーを押します。</p>
     <p class="start-hint">準備ができたら <span class="key">スペース</span> キーで開始</p>
   </div>
 </section>
@@ -147,7 +138,6 @@
   <div id="progress"></div>
   <div id="msg"></div>
   <div id="fix">＋</div>
-  <div id="prompt"></div>
   <div id="trialLamps" class="lamps"></div>
 </section>
 
@@ -195,17 +185,11 @@ const KEYMAP = {
 const ALL_CODES = new Set(Object.keys(KEY_LABEL));
 
 // ===== 状態 =====
-let state = 'setup';   // setup | rest | ready | fixation | response | iti | results
+let state = 'setup';   // setup | rest | fixation | response | iti | results
 let S = null;          // 実験セッション
 let downloaded = false;
-const held = new Set(); // いま押しているキー（event.code）
 
 const $ = sel => document.querySelector(sel);
-const allHeld = () => KEYMAP[currentN()].every(c => held.has(c));
-
-function updateHeld() {
-  document.querySelectorAll('.lamp-wrap').forEach(w => w.classList.toggle('held', held.has(w.dataset.code)));
-}
 
 function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) {
@@ -236,7 +220,6 @@ function buildLamps(container, n) {
   for (const code of KEYMAP[n]) {
     const wrap = document.createElement('div');
     wrap.className = 'lamp-wrap';
-    wrap.dataset.code = code;
     const lamp = document.createElement('div');
     lamp.className = 'lamp';
     const label = document.createElement('div');
@@ -246,7 +229,6 @@ function buildLamps(container, n) {
     container.appendChild(wrap);
     lamps.push(lamp);
   }
-  updateHeld();
   return lamps;
 }
 
@@ -306,23 +288,12 @@ function startTrial() {
   updateProgress();
   S.lamps.forEach(l => l.classList.remove('on'));
   T = { target: S.targets[S.trialIdx], onset: null, provisionalOnset: null };
-  waitForHold();
+  beginWait();
 }
 
-// 使うキーが全部押されるまで待つ
-function waitForHold() {
-  if (allHeld()) { beginWait(); return; }
-  state = 'ready';
-  $('#fix').classList.add('hidden');
-  $('#prompt').textContent = '使うキーを全部押してください';
-  $('#trialLamps').classList.add('show-held');
-}
-
-// 全部押されたら「＋」を出して、ランダムな待ち時間のあとに光らせる
+// 「＋」を出して、ランダムな待ち時間のあとに光らせる
 function beginWait() {
   state = 'fixation';
-  $('#prompt').textContent = '';
-  $('#trialLamps').classList.remove('show-held');
   $('#fix').classList.remove('hidden');
   const wait = WAIT_MIN + Math.random() * (WAIT_MAX - WAIT_MIN);
   waitTimer = setTimeout(flash, wait);
@@ -354,7 +325,7 @@ function onFalseStart() {
   flashToken++;
   state = 'iti';
   $('#fix').classList.add('hidden');
-  $('#msg').textContent = 'フライング！ 光るまで押したままにしてください';
+  $('#msg').textContent = 'フライング！ 光ってから押してください';
   setTimeout(() => { $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
 }
 
@@ -399,31 +370,16 @@ function blockDone() {
 }
 
 // ===== キー入力 =====
+// 反応は「光ったマスのキーを押す」ことで行う（光ってから押すまでの時間を測る）
 document.addEventListener('keydown', e => {
-  if (ALL_CODES.has(e.code)) { held.add(e.code); updateHeld(); }
+  const t = performance.now();
   if (state === 'setup' || state === 'results') return;
   if (e.code === 'Space' || ALL_CODES.has(e.code)) e.preventDefault();
-  if (state === 'ready' && allHeld()) { beginWait(); return; }
   if (e.repeat) return; // 押しっぱなしの連続入力は無視
-  if (state === 'rest' && e.code === 'Space') beginBlock();
-});
-
-// 反応は「光ったマスのキーから指を離す」ことで行う
-document.addEventListener('keyup', e => {
-  const t = performance.now();
-  if (!ALL_CODES.has(e.code)) return;
-  held.delete(e.code); updateHeld();
-  if (state === 'setup' || state === 'results') return;
-  e.preventDefault();
-  if (!KEYMAP[currentN()].includes(e.code)) return; // この条件で使わないキーは無視
-  if (state === 'fixation') onFalseStart();          // 光る前に離した
+  if (state === 'rest' && e.code === 'Space') { beginBlock(); return; }
+  if (!ALL_CODES.has(e.code) || !KEYMAP[currentN()].includes(e.code)) return; // この条件で使わないキーは無視
+  if (state === 'fixation') onFalseStart();          // 光る前に押した
   else if (state === 'response') onResponse(e.code, t);
-});
-
-// ほかのウィンドウに切り替わると keyup が届かなくなるので、押している状態をリセットする
-window.addEventListener('blur', () => {
-  held.clear(); updateHeld();
-  if (state === 'fixation') { clearTimeout(waitTimer); flashToken++; waitForHold(); }
 });
 
 // ===== 結果 =====
