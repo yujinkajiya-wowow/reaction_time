@@ -125,6 +125,19 @@
   #combo span { display: block; font-size: 18px; letter-spacing: .2em; }
   #combo.on { opacity: 1; }
   #combo.bump { animation: bump .25s ease-out; }
+  #voice {
+    position: absolute; right: 24px; top: 140px; max-width: 46vw; text-align: right;
+    font-size: 28px; font-weight: 900; color: #fff; opacity: 0; pointer-events: none;
+    text-shadow: 0 0 12px #ff5f6d, 0 2px 0 #000;
+  }
+  #voice.show { animation: voicepop .9s ease-out forwards; }
+  @keyframes voicepop {
+    0% { opacity: 0; transform: scale(.6) rotate(-6deg); }
+    15% { opacity: 1; transform: scale(1.2) rotate(3deg); }
+    30% { transform: scale(1) rotate(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
   @keyframes bump { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
 
   #bar { position: absolute; left: 0; bottom: 0; height: 6px; background: var(--accent); width: 0; transition: width .3s; }
@@ -135,6 +148,42 @@
     20% { transform: translateX(-14px); } 40% { transform: translateX(12px); }
     60% { transform: translateX(-8px); }  80% { transform: translateX(5px); }
   }
+  /* ===== フィーバー ===== */
+  #gauge {
+    position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+    width: min(420px, 80vw); text-align: center; line-height: 1;
+  }
+  #gaugeLabel { font-size: 13px; letter-spacing: .3em; color: var(--dim); margin-bottom: 6px; font-weight: bold; }
+  #gaugeTrack { height: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #1f1f1f; }
+  #gaugeFill { height: 100%; width: 0; background: linear-gradient(90deg, #ff9f43, #ff5f6d); transition: width .35s; }
+  #trial.fever #gaugeLabel { color: var(--accent); }
+  #trial.fever #gaugeFill { background: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6ee08a, #4facfe, #b86bff); }
+
+  /* やかましい演出は反応後の短い時間だけ（.fever-live）。「＋」が出たら止める */
+  #feverFx { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+  #trial.fever-live #feverFx {
+    background: conic-gradient(from 0deg, #ff5f6d55, #ffc37155, #f9f87155, #6ee08a55, #4facfe55, #b86bff55, #ff5f6d55);
+    animation: feverbg .85s ease-out forwards;
+  }
+  @keyframes feverbg {
+    0%   { opacity: 0; transform: scale(1) rotate(0); }
+    15%  { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.4) rotate(90deg); }
+  }
+  #feverText {
+    position: absolute; left: 50%; top: 18%; transform: translateX(-50%);
+    font-size: 64px; font-weight: 900; letter-spacing: .1em; opacity: 0; pointer-events: none; white-space: nowrap;
+  }
+  #trial.fever-live #feverText { animation: fevertext .85s ease-out forwards; }
+  @keyframes fevertext {
+    0%   { opacity: 0; transform: translateX(-50%) scale(.5) rotate(-8deg); }
+    20%  { opacity: 1; transform: translateX(-50%) scale(1.25) rotate(4deg); }
+    40%  { transform: translateX(-50%) scale(1) rotate(-3deg); }
+    80%  { opacity: 1; }
+    100% { opacity: 0; transform: translateX(-50%) scale(1.1) rotate(0); }
+  }
+  #trial.fever-live #combo b { color: #ff6bd6; }
+
   .particle { position: fixed; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
 
   .rank { display: inline-block; font-weight: 900; letter-spacing: .05em; }
@@ -199,7 +248,7 @@
       <button id="startBtn" class="primary" type="button">開始</button>
     </div>
     <p class="error" id="setupError"></p>
-    <p>1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。目指せレジェンド。</p>
+    <p>1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。速さとコンボでゲージがたまると<b>フィーバー</b>！ 目指せレジェンド。</p>
     <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。</p>
   </div>
 </section>
@@ -218,12 +267,16 @@
 
 <!-- 3. 試行画面 -->
 <section id="trial" class="screen">
+  <div id="feverFx"></div>
+  <div id="feverText" class="legend">FEVER!!</div>
   <div id="progress"></div>
   <div id="msg"></div>
   <div id="combo"><b></b><span>COMBO</span></div>
+  <div id="voice"></div>
   <div id="fix">＋</div>
   <div id="fb"></div>
   <div id="trialLamps" class="lamps"></div>
+  <div id="gauge"><div id="gaugeLabel">FEVER</div><div id="gaugeTrack"><div id="gaugeFill"></div></div></div>
   <div id="bar"></div>
 </section>
 
@@ -256,6 +309,7 @@ const MAIN_TRIALS = 10;
 const WAIT_MIN = 1000, WAIT_MAX = 3000;   // 注視点からマス点灯までの待ち時間(ms)
 const TIMEOUT = 2000;                     // 時間切れ(ms)
 const ANTICIPATION = 100;                 // これ未満は予測による反応として除外(ms)
+const FEVER_TRIALS = 6;                   // フィーバーが続く試行数
 const ITI = 900;                          // 反応後、次の試行の「＋」が出るまでの間(ms)。この間に評価を表示する
 const FALSE_START_MSG_MS = 1200;
 
@@ -417,6 +471,40 @@ function confetti(count = 120) {
   }
 }
 
+// ===== 連鎖ボイス（voice/ フォルダの音声を再生） =====
+const VOICE_LINES = [
+  { min: 7, text: 'よかったこの距離で',       src: 'voice/yokatta.mp3' },
+  { min: 6, text: 'そこはあかんゆうとるやろ', src: 'voice/sokoha.mp3' },
+  { min: 5, text: 'あっかーん！！',           src: 'voice/akkan.mp3' },
+  { min: 1, text: 'うわー',                   src: 'voice/uwa.mp3' }
+];
+VOICE_LINES.forEach(l => { l.audio = new Audio(l.src); l.audio.preload = 'auto'; });
+let playingVoice = null;
+function stopVoice() {
+  if (playingVoice) { playingVoice.pause(); playingVoice.currentTime = 0; playingVoice = null; }
+}
+
+// 再生し終わる（か、最大2.5秒たつ）と解決する。次の試行はこれを待ってから始める
+let voiceDone = Promise.resolve();
+function comboVoice(combo) {
+  const line = VOICE_LINES.find(l => combo >= l.min);
+  const el = $('#voice');
+  el.textContent = line.text;
+  retrigger(el, 'show');
+  stopVoice();
+  if (!soundOn) { voiceDone = Promise.resolve(); return; }
+  const a = line.audio;
+  playingVoice = a;
+  a.currentTime = 0;
+  voiceDone = new Promise(res => {
+    const t = setTimeout(done, 2500);
+    function done() { clearTimeout(t); a.removeEventListener('ended', done); a.removeEventListener('error', done); res(); }
+    a.addEventListener('ended', done);
+    a.addEventListener('error', done);
+    a.play().catch(done);
+  });
+}
+
 function setCombo(v) {
   S.combo = v;
   S.maxCombo = Math.max(S.maxCombo, v);
@@ -426,7 +514,51 @@ function setCombo(v) {
   if (v >= 2) retrigger(el, 'bump');
 }
 
+// ===== フィーバー =====
+// 反応の速さ（ランク）とコンボからスコアを出してゲージをためる。スコア自体は表示しない
+const FEVER_GAIN = [24, 20, 16, 13, 10, 8, 6]; // ランク（レジェンド〜プロ）ごとの基本点
+function updateGauge() {
+  const v = S.fever > 0 ? S.fever / FEVER_TRIALS * 100 : S.gauge;
+  $('#gaugeFill').style.width = v + '%';
+  $('#trial').classList.toggle('fever', S.fever > 0);
+  $('#gaugeLabel').textContent = S.fever > 0 ? 'FEVER!!' : 'FEVER';
+}
+function addScore(level) {
+  if (S.fever > 0) return;
+  S.gauge = Math.min(100, S.gauge + FEVER_GAIN[level] * (1 + Math.min(S.combo, 10) * 0.08));
+  if (S.gauge >= 100) {
+    S.gauge = 0;
+    S.fever = FEVER_TRIALS;
+    S.feverStart = true;
+  }
+  updateGauge();
+}
+function loseScore() {
+  if (S.fever > 0) return;
+  S.gauge = Math.max(0, S.gauge - 20);
+  updateGauge();
+}
+// 反応後の待ち時間にだけ鳴らす・光らせる
+function feverEffect() {
+  if (S.fever <= 0) return;
+  const start = S.feverStart;
+  S.feverStart = false;
+  $('#feverText').textContent = start ? 'FEVER START!!' : 'FEVER!!';
+  retrigger($('#trial'), 'fever-live');
+  // ドラムっぽい低音＋きらきら
+  tone(110, .18, 'sine', .25, 50);
+  [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, .1, 'square', .05, null, .05 + i * .05));
+  if (start) { sfxFanfare(); confetti(150); } else confetti(40);
+}
+function stopLoudEffects() {
+  $('#trial').classList.remove('fever-live');
+  $('#voice').classList.remove('show');
+  stopVoice();
+  document.querySelectorAll('.particle').forEach(p => p.remove()); // 紙吹雪が「＋」の間に残らないように
+}
+
 function missEffect(text) {
+  loseScore();
   setCombo(0);
   retrigger($('#trial'), 'shake');
   sfxMiss();
@@ -448,7 +580,10 @@ function startExperiment() {
     combo: 0,
     maxCombo: 0,
     lastBlock: null,
-    best: {},           // 条件ごとの本番の最速
+    best: {},
+    gauge: 0,           // フィーバーゲージ(0〜100)
+    fever: 0,           // フィーバーの残り試行数
+    feverStart: false,           // 条件ごとの本番の最速
     prevBlockLevel: null
   };
   initAudio();
@@ -484,6 +619,7 @@ function beginBlock() {
   $('#msg').textContent = '';
   $('#fb').classList.remove('show');
   setCombo(S.combo);
+  updateGauge();
   showScreen('trial');
   startTrial();
 }
@@ -506,6 +642,7 @@ function startTrial() {
 
 // 「＋」を出して、ランダムな待ち時間のあとに光らせる
 function beginWait() {
+  stopLoudEffects();
   state = 'fixation';
   $('#fix').classList.remove('hidden');
   const wait = WAIT_MIN + Math.random() * (WAIT_MAX - WAIT_MIN);
@@ -561,6 +698,7 @@ function onResponse(code, t) {
   } else {
     record('正答', rt);
     setCombo(S.combo + 1);
+    comboVoice(S.combo);
     const g = grade(n, rt), level = RANKS.indexOf(g);
     // 本番での自己ベスト更新（各条件の2回目以降の正答から）
     let newBest = false;
@@ -569,7 +707,8 @@ function onResponse(code, t) {
       if (S.best[n] == null || rt < S.best[n]) S.best[n] = rt;
     }
     S.lamps[T.target].classList.add('hit');
-    burst(S.lamps[T.target], g.color, level === 0 ? 50 : 30 - level * 3);
+    addScore(level);
+    burst(S.lamps[T.target], g.color, (level === 0 ? 50 : 30 - level * 3) * (S.fever > 0 ? 2 : 1));
     sfxHit(level, S.combo);
     if (newBest) sfxBest();
     if (level === 0) confetti(60);
@@ -577,6 +716,7 @@ function onResponse(code, t) {
       <div class="fb-label">${rankHTML(g)}${level <= 1 ? '！！' : '！'}</div>
       ${newBest ? '<div class="fb-best">自己ベスト更新！</div>' : ''}`, g.color);
   }
+  feverEffect();
   endTrial(true);
 }
 
@@ -592,11 +732,15 @@ function endTrial(keepLamp = false) {
   state = 'iti';
   S.lamps.forEach(l => { if (!keepLamp) l.classList.remove('on'); });
   $('#fix').classList.add('hidden');
-  setTimeout(() => {
+  const voice = voiceDone;
+  voiceDone = Promise.resolve();
+  // 演出の時間(ITI)とボイスの両方が終わってから次へ。しゃべっている途中で「＋」が出ないようにする
+  Promise.all([new Promise(res => setTimeout(res, ITI)), voice]).then(() => {
+    if (S.fever > 0) { S.fever--; updateGauge(); }
     S.trialIdx++;
     if (S.trialIdx < S.targets.length) startTrial();
     else blockDone();
-  }, ITI);
+  });
 }
 
 function blockDone() {
@@ -765,6 +909,7 @@ const soundBtn = $('#soundBtn');
 soundBtn.addEventListener('click', () => {
   soundOn = !soundOn;
   soundBtn.textContent = soundOn ? '音：ON' : '音：OFF';
+  if (!soundOn) stopVoice();
   initAudio();
   soundBtn.blur();
 });
