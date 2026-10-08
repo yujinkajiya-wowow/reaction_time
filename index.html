@@ -125,6 +125,19 @@
   #combo span { display: block; font-size: 18px; letter-spacing: .2em; }
   #combo.on { opacity: 1; }
   #combo.bump { animation: bump .25s ease-out; }
+  #voice {
+    position: absolute; right: 24px; top: 140px; max-width: 46vw; text-align: right;
+    font-size: 28px; font-weight: 900; color: #fff; opacity: 0; pointer-events: none;
+    text-shadow: 0 0 12px #ff5f6d, 0 2px 0 #000;
+  }
+  #voice.show { animation: voicepop .9s ease-out forwards; }
+  @keyframes voicepop {
+    0% { opacity: 0; transform: scale(.6) rotate(-6deg); }
+    15% { opacity: 1; transform: scale(1.2) rotate(3deg); }
+    30% { transform: scale(1) rotate(0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
   @keyframes bump { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
 
   #bar { position: absolute; left: 0; bottom: 0; height: 6px; background: var(--accent); width: 0; transition: width .3s; }
@@ -259,6 +272,7 @@
   <div id="progress"></div>
   <div id="msg"></div>
   <div id="combo"><b></b><span>COMBO</span></div>
+  <div id="voice"></div>
   <div id="fix">＋</div>
   <div id="fb"></div>
   <div id="trialLamps" class="lamps"></div>
@@ -457,6 +471,40 @@ function confetti(count = 120) {
   }
 }
 
+// ===== 連鎖ボイス（voice/ フォルダの音声を再生） =====
+const VOICE_LINES = [
+  { min: 7, text: 'よかったこの距離で',       src: 'voice/yokatta.mp3' },
+  { min: 6, text: 'そこはあかんゆうとるやろ', src: 'voice/sokoha.mp3' },
+  { min: 5, text: 'あっかーん！！',           src: 'voice/akkan.mp3' },
+  { min: 1, text: 'うわー',                   src: 'voice/uwa.mp3' }
+];
+VOICE_LINES.forEach(l => { l.audio = new Audio(l.src); l.audio.preload = 'auto'; });
+let playingVoice = null;
+function stopVoice() {
+  if (playingVoice) { playingVoice.pause(); playingVoice.currentTime = 0; playingVoice = null; }
+}
+
+// 再生し終わる（か、最大2.5秒たつ）と解決する。次の試行はこれを待ってから始める
+let voiceDone = Promise.resolve();
+function comboVoice(combo) {
+  const line = VOICE_LINES.find(l => combo >= l.min);
+  const el = $('#voice');
+  el.textContent = line.text;
+  retrigger(el, 'show');
+  stopVoice();
+  if (!soundOn) { voiceDone = Promise.resolve(); return; }
+  const a = line.audio;
+  playingVoice = a;
+  a.currentTime = 0;
+  voiceDone = new Promise(res => {
+    const t = setTimeout(done, 2500);
+    function done() { clearTimeout(t); a.removeEventListener('ended', done); a.removeEventListener('error', done); res(); }
+    a.addEventListener('ended', done);
+    a.addEventListener('error', done);
+    a.play().catch(done);
+  });
+}
+
 function setCombo(v) {
   S.combo = v;
   S.maxCombo = Math.max(S.maxCombo, v);
@@ -504,6 +552,8 @@ function feverEffect() {
 }
 function stopLoudEffects() {
   $('#trial').classList.remove('fever-live');
+  $('#voice').classList.remove('show');
+  stopVoice();
   document.querySelectorAll('.particle').forEach(p => p.remove()); // 紙吹雪が「＋」の間に残らないように
 }
 
@@ -648,6 +698,7 @@ function onResponse(code, t) {
   } else {
     record('正答', rt);
     setCombo(S.combo + 1);
+    comboVoice(S.combo);
     const g = grade(n, rt), level = RANKS.indexOf(g);
     // 本番での自己ベスト更新（各条件の2回目以降の正答から）
     let newBest = false;
@@ -681,12 +732,15 @@ function endTrial(keepLamp = false) {
   state = 'iti';
   S.lamps.forEach(l => { if (!keepLamp) l.classList.remove('on'); });
   $('#fix').classList.add('hidden');
-  setTimeout(() => {
+  const voice = voiceDone;
+  voiceDone = Promise.resolve();
+  // 演出の時間(ITI)とボイスの両方が終わってから次へ。しゃべっている途中で「＋」が出ないようにする
+  Promise.all([new Promise(res => setTimeout(res, ITI)), voice]).then(() => {
     if (S.fever > 0) { S.fever--; updateGauge(); }
     S.trialIdx++;
     if (S.trialIdx < S.targets.length) startTrial();
     else blockDone();
-  }, ITI);
+  });
 }
 
 function blockDone() {
@@ -855,6 +909,7 @@ const soundBtn = $('#soundBtn');
 soundBtn.addEventListener('click', () => {
   soundOn = !soundOn;
   soundBtn.textContent = soundOn ? '音：ON' : '音：OFF';
+  if (!soundOn) stopVoice();
   initAudio();
   soundBtn.blur();
 });
