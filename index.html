@@ -125,18 +125,20 @@
   #combo span { display: block; font-size: 18px; letter-spacing: .2em; }
   #combo.on { opacity: 1; }
   #combo.bump { animation: bump .25s ease-out; }
+  /* セリフは画面の中心から斜めに飛び出す。向きは JS で --dx --dy --rot を決める */
   #voice {
-    position: absolute; right: 24px; top: 140px; max-width: 46vw; text-align: right;
-    font-size: 28px; font-weight: 900; color: #fff; opacity: 0; pointer-events: none;
-    text-shadow: 0 0 12px #ff5f6d, 0 2px 0 #000;
+    position: absolute; left: 50%; top: calc(50% - 40px); white-space: nowrap;
+    font-size: 36px; font-weight: 900; color: #fff; opacity: 0; pointer-events: none;
+    text-shadow: 0 0 14px #ff5f6d, 0 3px 0 #000;
+    --ax: 0%; --dx: 130px; --dy: -110px; --rot: -12deg; /* --ax: 中心側の端をそろえるためのずらし */
   }
-  #voice.show { animation: voicepop .9s ease-out forwards; }
+  #voice.show { animation: voicepop 1.3s cubic-bezier(.2, .9, .3, 1) forwards; }
   @keyframes voicepop {
-    0% { opacity: 0; transform: scale(.6) rotate(-6deg); }
-    15% { opacity: 1; transform: scale(1.2) rotate(3deg); }
-    30% { transform: scale(1) rotate(0); }
-    85% { opacity: 1; }
-    100% { opacity: 0; }
+    0%   { opacity: 0; transform: translate(var(--ax), -50%) rotate(var(--rot)) scale(.2); }
+    18%  { opacity: 1; transform: translate(calc(var(--ax) + var(--dx) * 1.08), calc(-50% + var(--dy) * 1.08)) rotate(var(--rot)) scale(1.25); }
+    32%  { transform: translate(calc(var(--ax) + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1); }
+    85%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(calc(var(--ax) + var(--dx) * 1.12), calc(-50% + var(--dy) * 1.12)) rotate(var(--rot)) scale(1); }
   }
   @keyframes bump { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
 
@@ -490,6 +492,13 @@ function comboVoice(combo) {
   const line = VOICE_LINES.find(l => combo >= l.min);
   const el = $('#voice');
   el.textContent = line.text;
+  // 右上・左上のどちらかへ斜めに飛ばす。中心に近い側の端を起点にして、外へ向かって上がっていく
+  const right = Math.random() < .5;
+  el.style.setProperty('--ax', right ? '0%' : '-100%');
+  el.style.transformOrigin = right ? 'left center' : 'right center';
+  el.style.setProperty('--dx', (right ? 1 : -1) * (110 + Math.random() * 30) + 'px');
+  el.style.setProperty('--dy', -(100 + Math.random() * 20) + 'px');
+  el.style.setProperty('--rot', (right ? -1 : 1) * (8 + Math.random() * 6) + 'deg');
   retrigger(el, 'show');
   stopVoice();
   if (!soundOn) { voiceDone = Promise.resolve(); return; }
