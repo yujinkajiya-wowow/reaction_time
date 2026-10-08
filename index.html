@@ -94,11 +94,70 @@
   tr.avg td { font-weight: bold; border-top: 2px solid #999; }
   .table-scroll { overflow-x: auto; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+
+  /* ===== 演出 ===== */
+  #soundBtn { position: fixed; top: 12px; right: 130px; z-index: 10; font-size: 14px; padding: 4px 12px; opacity: .75; }
+  .lamp { transition: transform .12s; }
+  .lamp.hit { transform: scale(1.18); box-shadow: 0 0 32px var(--lamp-on); }
+  .lamp.miss { background: #ff5252; border-color: #ff5252; }
+
+  #fb {
+    position: absolute; left: 50%; top: calc(50% - 40px); transform: translate(-50%, -50%);
+    text-align: center; line-height: 1.1; color: var(--c, var(--text)); opacity: 0; pointer-events: none;
+  }
+  #fb.show { animation: pop .8s ease-out forwards; }
+  .fb-ms { font-size: 72px; font-weight: bold; font-family: Menlo, Consolas, monospace; }
+  .fb-ms small { font-size: 28px; margin-left: 4px; }
+  .fb-label { font-size: 30px; font-weight: bold; margin-top: 6px; }
+  @keyframes pop {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(.4); }
+    18%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    30%  { transform: translate(-50%, -50%) scale(1); }
+    80%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -62%) scale(1); }
+  }
+
+  #combo {
+    position: absolute; right: 24px; top: 48px; text-align: right; line-height: 1;
+    font-weight: bold; color: var(--accent); opacity: 0;
+  }
+  #combo b { font-size: 56px; font-family: Menlo, Consolas, monospace; }
+  #combo span { display: block; font-size: 18px; letter-spacing: .2em; }
+  #combo.on { opacity: 1; }
+  #combo.bump { animation: bump .25s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
+
+  #bar { position: absolute; left: 0; bottom: 0; height: 6px; background: var(--accent); width: 0; transition: width .3s; }
+
+  #trial.shake { animation: shake .35s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-14px); } 40% { transform: translateX(12px); }
+    60% { transform: translateX(-8px); }  80% { transform: translateX(5px); }
+  }
+  .particle { position: absolute; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
+
+  .rank { display: inline-block; font-weight: bold; font-family: Menlo, Consolas, monospace; }
+  #restResult { margin: 0 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  #restResult:empty { display: none; }
+  #restResult .rank { font-size: 48px; line-height: 1; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; text-align: center; line-height: 1.3; }
+  .card .v { font-size: 30px; font-weight: bold; margin: 4px 0; }
+  .card .s { font-size: 13px; color: var(--dim); }
+  .card.big .v { font-size: 56px; }
+  .comment { font-size: 20px; margin: 4px 0 12px; }
+  .bars { max-width: 560px; margin: 8px 0 16px; }
+  .bars .b { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .bars .b span:first-child { width: 3em; text-align: right; }
+  .bars .fill { height: 18px; background: var(--accent); border-radius: 3px; }
 </style>
 </head>
 <body>
 
 <button id="fsBtn" type="button">全画面表示</button>
+<button id="soundBtn" type="button">音：ON</button>
 
 <!-- 1. 被験者ID入力 -->
 <section id="setup" class="screen active">
@@ -109,7 +168,7 @@
       <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
       <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
       <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。</li>
-      <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が5回あります。</li>
+      <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が3回あります。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
     <p style="margin-top:20px">被験者ID（名前やイニシャル）</p>
@@ -118,6 +177,7 @@
       <button id="startBtn" class="primary" type="button">開始</button>
     </div>
     <p class="error" id="setupError"></p>
+    <p>1回ごとにタイムと評価が出ます。連続で正解するとコンボ。最後に総合ランクが出るので、Sランクを狙ってください。</p>
     <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。</p>
   </div>
 </section>
@@ -125,6 +185,7 @@
 <!-- 2. 休憩・説明画面 -->
 <section id="rest" class="screen">
   <div class="box">
+    <div id="restResult"></div>
     <h2 id="restTitle"></h2>
     <p id="restText"></p>
     <div id="restLamps" class="lamps"></div>
@@ -137,8 +198,11 @@
 <section id="trial" class="screen">
   <div id="progress"></div>
   <div id="msg"></div>
+  <div id="combo"><b></b><span>COMBO</span></div>
   <div id="fix">＋</div>
+  <div id="fb"></div>
   <div id="trialLamps" class="lamps"></div>
+  <div id="bar"></div>
 </section>
 
 <!-- 4. 結果画面 -->
@@ -146,6 +210,7 @@
   <div class="box">
     <h1>結果</h1>
     <p id="resultInfo"></p>
+    <div id="summary"></div>
     <div class="table-scroll">
       <table id="resultTable"></table>
     </div>
@@ -164,12 +229,12 @@
 
 // ===== 設定 =====
 const CONDITIONS = [1, 2, 4, 8];
-const PRACTICE_TRIALS = 5;
+const PRACTICE_TRIALS = 3;
 const MAIN_TRIALS = 10;
 const WAIT_MIN = 1000, WAIT_MAX = 3000;   // 注視点からマス点灯までの待ち時間(ms)
 const TIMEOUT = 2000;                     // 時間切れ(ms)
 const ANTICIPATION = 100;                 // これ未満は予測による反応として除外(ms)
-const ITI = 500;                          // 反応後、次の試行の「＋」が出るまでの間(ms)
+const ITI = 900;                          // 反応後、次の試行の「＋」が出るまでの間(ms)。この間に評価を表示する
 const FALSE_START_MSG_MS = 1200;
 
 const KEY_LABEL = {
@@ -183,6 +248,25 @@ const KEYMAP = {
   8: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon']
 };
 const ALL_CODES = new Set(Object.keys(KEY_LABEL));
+
+// 評価の目安(ms)。選択肢が多いほど遅くなるのが普通なので、条件ごとに分ける
+const GRADE = {
+  1: [180, 220, 270, 330],
+  2: [250, 300, 360, 430],
+  4: [320, 380, 450, 530],
+  8: [380, 450, 530, 620]
+};
+const RANKS = [
+  { rank: 'S', label: '神速',     color: '#ff6bd6' },
+  { rank: 'A', label: 'はやい！', color: '#ffd400' },
+  { rank: 'B', label: 'いいね',   color: '#6ee08a' },
+  { rank: 'C', label: 'ふつう',   color: '#7ab8ff' },
+  { rank: 'D', label: 'おそい',   color: '#9a9a9a' }
+];
+function grade(n, ms) {
+  const i = GRADE[n].findIndex(t => ms < t);
+  return RANKS[i < 0 ? RANKS.length - 1 : i];
+}
 
 // ===== 状態 =====
 let state = 'setup';   // setup | rest | fixation | response | iti | results
@@ -232,6 +316,74 @@ function buildLamps(container, n) {
   return lamps;
 }
 
+// ===== 演出（反応したあとにだけ出す。光る前・光っている間は何も変えない） =====
+let audio = null, soundOn = true;
+function initAudio() {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (_) {}
+}
+function tone(freq, dur, type = 'sine', vol = 0.12, slideTo = null, delay = 0) {
+  if (!soundOn || !audio) return;
+  const t0 = audio.currentTime + delay;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t0);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(t0); o.stop(t0 + dur);
+}
+const sfxHit = (level, combo) => {
+  const base = 520 * Math.pow(2, Math.min(combo, 12) / 12); // コンボが続くほど音が上がる
+  tone(base, .12, 'square', .08);
+  tone(base * 1.5, .16, 'square', .08, null, .07);
+  if (level === 0) tone(base * 2, .25, 'triangle', .1, null, .14);
+};
+const sfxMiss = () => tone(180, .3, 'sawtooth', .1, 80);
+const sfxFanfare = () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .1, null, i * .12));
+
+function retrigger(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
+function showFeedback(html, color) {
+  const fb = $('#fb');
+  fb.innerHTML = html;
+  fb.style.setProperty('--c', color);
+  retrigger(fb, 'show');
+}
+
+function burst(lamp, color, count) {
+  const box = lamp.getBoundingClientRect();
+  const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.background = color;
+    p.style.left = cx - 5 + 'px'; p.style.top = cy - 5 + 'px';
+    $('#trial').appendChild(p);
+    const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 120;
+    p.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${Math.cos(a) * d}px, ${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }
+    ], { duration: 500 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.3,1)' }).onfinish = () => p.remove();
+  }
+}
+
+function setCombo(v) {
+  S.combo = v;
+  S.maxCombo = Math.max(S.maxCombo, v);
+  const el = $('#combo');
+  el.querySelector('b').textContent = v;
+  el.classList.toggle('on', v >= 2);
+  if (v >= 2) retrigger(el, 'bump');
+}
+
+function missEffect(text) {
+  setCombo(0);
+  retrigger($('#trial'), 'shake');
+  sfxMiss();
+  showFeedback(`<div class="fb-label">${text}</div>`, '#ff8a80');
+}
+
 // ===== 実験の流れ =====
 function startExperiment() {
   const id = $('#subjectId').value.trim();
@@ -243,8 +395,12 @@ function startExperiment() {
     order: shuffle([...CONDITIONS]),
     condIdx: 0,
     phase: 'practice',
-    rows: []
+    rows: [],
+    combo: 0,
+    maxCombo: 0,
+    lastBlock: null
   };
+  initAudio();
   downloaded = false;
   showRest();
 }
@@ -261,6 +417,8 @@ function showRest() {
     $('#restTitle').textContent = `練習おわり（${n}択）`;
     $('#restText').innerHTML = `次は<b>本番${MAIN_TRIALS}回</b>です。使うキー：${keys}`;
   }
+  $('#restResult').innerHTML = S.lastBlock || '';
+  S.lastBlock = null;
   buildLamps($('#restLamps'), n);
   showScreen('rest');
   state = 'rest';
@@ -272,6 +430,8 @@ function beginBlock() {
   S.trialIdx = 0;
   S.lamps = buildLamps($('#trialLamps'), n);
   $('#msg').textContent = '';
+  $('#fb').classList.remove('show');
+  setCombo(S.combo);
   showScreen('trial');
   startTrial();
 }
@@ -279,6 +439,7 @@ function beginBlock() {
 function updateProgress() {
   const label = S.phase === 'practice' ? '練習' : '本番';
   $('#progress').textContent = `${currentN()}択　${label} ${S.trialIdx + 1} / ${S.targets.length}`;
+  $('#bar').style.width = (S.trialIdx / S.targets.length * 100) + '%';
 }
 
 let waitTimer = null, timeoutTimer = null, flashToken = 0;
@@ -286,7 +447,7 @@ let T = null; // 現在の試行
 
 function startTrial() {
   updateProgress();
-  S.lamps.forEach(l => l.classList.remove('on'));
+  S.lamps.forEach(l => l.classList.remove('on', 'hit', 'miss'));
   T = { target: S.targets[S.trialIdx], onset: null, provisionalOnset: null };
   beginWait();
 }
@@ -325,7 +486,8 @@ function onFalseStart() {
   flashToken++;
   state = 'iti';
   $('#fix').classList.add('hidden');
-  $('#msg').textContent = 'フライング！ 光ってから押してください';
+  missEffect('フライング！');
+  $('#msg').textContent = '光ってから押してください';
   setTimeout(() => { $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
 }
 
@@ -334,21 +496,39 @@ function onResponse(code, t) {
   flashToken++;
   const onset = T.onset ?? T.provisionalOnset;
   const rt = t - onset;
-  if (rt > TIMEOUT) record('時間切れ', null);
-  else record(code === KEYMAP[currentN()][T.target] ? '正答' : '誤答', rt);
-  endTrial();
+  const n = currentN();
+  const keys = KEYMAP[n];
+  if (rt > TIMEOUT) { record('時間切れ', null); missEffect('時間切れ…'); }
+  else if (code !== keys[T.target]) {
+    record('誤答', rt);
+    S.lamps[keys.indexOf(code)].classList.add('miss');
+    missEffect('ちがうキー！');
+  } else if (rt < ANTICIPATION) {
+    record('正答', rt);
+    missEffect('はやすぎ（予測）');
+  } else {
+    record('正答', rt);
+    setCombo(S.combo + 1);
+    const g = grade(n, rt), level = RANKS.indexOf(g);
+    S.lamps[T.target].classList.add('hit');
+    burst(S.lamps[T.target], g.color, 24 - level * 4);
+    sfxHit(level, S.combo);
+    showFeedback(`<div class="fb-ms">${Math.round(rt)}<small>ms</small></div><div class="fb-label">${g.label}</div>`, g.color);
+  }
+  endTrial(true);
 }
 
 function onTimeout() {
   if (state !== 'response') return;
   flashToken++;
   record('時間切れ', null);
+  missEffect('時間切れ…');
   endTrial();
 }
 
-function endTrial() {
+function endTrial(keepLamp = false) {
   state = 'iti';
-  S.lamps.forEach(l => l.classList.remove('on'));
+  S.lamps.forEach(l => { if (!keepLamp) l.classList.remove('on'); });
   $('#fix').classList.add('hidden');
   setTimeout(() => {
     S.trialIdx++;
@@ -362,6 +542,13 @@ function blockDone() {
     S.phase = 'main';
     showRest();
     return;
+  }
+  const n = currentN(), avg = average(n);
+  if (avg != null) {
+    const g = blockGrade(n, avg);
+    S.lastBlock = `<div class="rank" style="color:${g.color}">${g.rank}</div>
+      <div>${n}択の本番おわり！ 平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}</div>`;
+    sfxFanfare();
   }
   S.condIdx++;
   S.phase = 'practice';
@@ -392,6 +579,27 @@ function average(n) {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 
+function accuracy(n) {
+  const rows = S.rows.filter(r => r.n === n);
+  return `${rows.filter(isUsed).length} / ${rows.length}`;
+}
+
+// セットの平均にはミスの分だけ少しペナルティを足してランクを決める
+function blockGrade(n, avg) {
+  const rows = S.rows.filter(r => r.n === n);
+  const misses = rows.length - rows.filter(isUsed).length;
+  return grade(n, avg + misses * 30);
+}
+
+function fastComment(ms) {
+  if (ms < 150) return '人間やめてる？ それフライングと紙一重やで';
+  if (ms < 200) return 'トップアスリート級。ゲーマーの指してる';
+  if (ms < 250) return 'かなり速い。自慢していい';
+  if (ms < 300) return '平均よりちょい速。悪くない';
+  if (ms < 400) return 'ふつう。伸びしろしかない';
+  return '寝起き？ もう一回やろ';
+}
+
 function fmtAvg(v) { return v == null ? '－' : v.toFixed(1); }
 
 // 平均に使う反応は数値だけ、除外した反応は理由を付けた文字にする
@@ -418,6 +626,26 @@ function showResults() {
   }
   html += '<tr class="avg"><td>平均</td>' + CONDITIONS.map(n => `<td>${fmtAvg(average(n))}</td>`).join('') + '</tr>';
   $('#resultTable').innerHTML = html;
+
+  // 総合ランクなど
+  const used = S.rows.filter(isUsed);
+  const ranks = CONDITIONS.map(n => average(n)).map((a, i) => a == null ? RANKS.length - 1 : RANKS.indexOf(blockGrade(CONDITIONS[i], a)));
+  const total = RANKS[Math.round(ranks.reduce((a, b) => a + b, 0) / ranks.length)];
+  const fastest = used.length ? used.reduce((a, b) => (a.rt < b.rt ? a : b)) : null;
+  const avgs = CONDITIONS.map(average);
+  const maxAvg = Math.max(...avgs.filter(v => v != null), 1);
+  $('#summary').innerHTML = `
+    <div class="cards">
+      <div class="card big"><div class="s">総合ランク</div><div class="v rank" style="color:${total.color}">${total.rank}</div></div>
+      <div class="card"><div class="s">最速</div><div class="v">${fastest ? Math.round(fastest.rt) + 'ms' : '－'}</div><div class="s">${fastest ? fastest.n + '択' : ''}</div></div>
+      <div class="card"><div class="s">正答率</div><div class="v">${S.rows.length ? Math.round(used.length / S.rows.length * 100) : 0}%</div></div>
+      <div class="card"><div class="s">最大コンボ</div><div class="v">${S.maxCombo}</div></div>
+    </div>
+    ${fastest ? `<p class="comment">${fastComment(fastest.rt)}</p>` : ''}
+    <p class="dim" style="margin-bottom:0">選択肢が増えるほど遅くなる（ヒックの法則）</p>
+    <div class="bars">${CONDITIONS.map((n, i) => `<div class="b"><span>${n}択</span>
+      <div class="fill" style="width:${avgs[i] == null ? 0 : avgs[i] / maxAvg * 70}%"></div><span>${fmtAvg(avgs[i])}</span></div>`).join('')}</div>`;
+  sfxFanfare();
 }
 
 // ===== CSV（画面と同じ表） =====
@@ -461,6 +689,14 @@ $('#againBtn').addEventListener('click', () => {
   state = 'setup';
   showScreen('setup');
   $('#subjectId').focus();
+});
+
+const soundBtn = $('#soundBtn');
+soundBtn.addEventListener('click', () => {
+  soundOn = !soundOn;
+  soundBtn.textContent = soundOn ? '音：ON' : '音：OFF';
+  initAudio();
+  soundBtn.blur();
 });
 
 const fsBtn = $('#fsBtn');
