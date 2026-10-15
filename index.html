@@ -96,6 +96,21 @@
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
 
   /* ===== 演出 ===== */
+  /* ===== モード切り替え ===== */
+  .modes { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; }
+  .modes label {
+    flex: 1 1 220px; cursor: pointer; padding: 10px 14px; border: 2px solid var(--line); border-radius: 8px;
+    background: var(--panel); line-height: 1.4;
+  }
+  .modes label:has(input:checked) { border-color: var(--accent); }
+  .modes input { margin-right: 6px; accent-color: var(--accent); }
+  .modes small { display: block; color: var(--dim); margin-top: 2px; }
+  body.serious .game-only, body:not(.serious) .serious-only { display: none !important; }
+  /* 真面目モード：演出用の表示を全部消す */
+  body.serious #soundBtn, body.serious #combo, body.serious #voice, body.serious #gauge,
+  body.serious #feverFx, body.serious #feverText { display: none; }
+  body.serious .lamp { transition: none; }
+
   #soundBtn { position: fixed; top: 12px; right: 130px; z-index: 10; font-size: 14px; padding: 4px 12px; opacity: .75; }
   .lamp { transition: transform .12s; }
   .lamp.hit { transform: scale(1.18); box-shadow: 0 0 32px var(--lamp-on); }
@@ -243,17 +258,22 @@
     <ul>
       <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
       <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
-      <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。ミスするとフィーバーゲージが大きく減り、フィーバー中なら終わってしまいます。</li>
+      <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。<span class="game-only">ミスするとフィーバーゲージが大きく減り、フィーバー中なら終わってしまいます。</span></li>
       <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が3回あります。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
-    <p style="margin-top:20px">被験者ID（名前やイニシャル）</p>
+    <p style="margin-top:20px">モード</p>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="game" checked>ゲームモード<small>タイム・ランク・コンボ・フィーバー・ボイスあり</small></label>
+      <label><input type="radio" name="mode" value="serious">真面目モード<small>演出なし。ミスしたときだけ文字で知らせます</small></label>
+    </div>
+    <p style="margin-top:16px">被験者ID（名前やイニシャル）</p>
     <div class="row">
       <input type="text" id="subjectId" autocomplete="off" placeholder="例：T.Y">
       <button id="startBtn" class="primary" type="button">開始</button>
     </div>
     <p class="error" id="setupError"></p>
-    <p>1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。速さとコンボでゲージがたまると<b>フィーバー</b>！ 目指せレジェンド。</p>
+    <p class="game-only">1回ごとにタイムとランクが出ます（プロ → スーパー → ハイパー → エリート → エキスパート → マスター → レジェンド）。連続で正解するとコンボ。速さとコンボでゲージがたまると<b>フィーバー</b>！ 目指せレジェンド。</p>
     <p class="dim">全画面表示にすると集中しやすくなります（右上のボタン）。<span class="key">Esc</span> でいつでもこの画面に戻れます。</p>
   </div>
 </section>
@@ -408,13 +428,30 @@ function buildLamps(container, n) {
   return lamps;
 }
 
+// ===== モード（game: 演出あり / serious: 演出なし） =====
+let mode = 'game';
+const isGame = () => mode === 'game';
+function setMode(m) {
+  mode = m === 'serious' ? 'serious' : 'game';
+  document.body.classList.toggle('serious', !isGame());
+  document.querySelectorAll('input[name=mode]').forEach(i => { i.checked = i.value === mode; });
+  try { localStorage.setItem('rt-mode', mode); } catch (_) {}
+}
+document.querySelectorAll('input[name=mode]').forEach(i => i.addEventListener('change', () => setMode(i.value)));
+{
+  // URL に ?mode=serious を付けると真面目モードで開く。なければ前回選んだモード
+  let saved = new URLSearchParams(location.search).get('mode');
+  if (!saved) try { saved = localStorage.getItem('rt-mode'); } catch (_) {}
+  setMode(saved || 'game');
+}
+
 // ===== 演出（反応したあとにだけ出す。光る前・光っている間は何も変えない） =====
 let audio = null, soundOn = true;
 function initAudio() {
   try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (_) {}
 }
 function tone(freq, dur, type = 'sine', vol = 0.12, slideTo = null, delay = 0) {
-  if (!soundOn || !audio) return;
+  if (!soundOn || !audio || !isGame()) return;
   const t0 = audio.currentTime + delay;
   const o = audio.createOscillator(), g = audio.createGain();
   o.type = type;
@@ -445,6 +482,7 @@ function showFeedback(html, color) {
 }
 
 function burst(lamp, color, count) {
+  if (!isGame()) return;
   const box = lamp.getBoundingClientRect();
   const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
   for (let i = 0; i < count; i++) {
@@ -463,6 +501,7 @@ function burst(lamp, color, count) {
 
 // 画面全体に紙吹雪
 function confetti(count = 120) {
+  if (!isGame()) return;
   const colors = ['#ff5f6d', '#ffc371', '#f9f871', '#6ee08a', '#4facfe', '#b86bff'];
   for (let i = 0; i < count; i++) {
     const p = document.createElement('div');
@@ -493,6 +532,7 @@ function stopVoice() {
 }
 
 function comboVoice(combo) {
+  if (!isGame()) return;
   const line = VOICE_LINES.find(l => combo >= l.min);
   const el = $('#voice');
   el.textContent = line.text;
@@ -531,7 +571,7 @@ function updateGauge() {
   $('#gaugeLabel').textContent = S.fever > 0 ? 'FEVER!!' : 'FEVER';
 }
 function addScore(level) {
-  if (S.fever > 0) return;
+  if (!isGame() || S.fever > 0) return;
   S.gauge = Math.min(100, S.gauge + FEVER_GAIN[level] * (1 + Math.min(S.combo, 10) * 0.08));
   if (S.gauge >= 100) {
     S.gauge = 0;
@@ -543,6 +583,7 @@ function addScore(level) {
 // ミスしたときにゲージから引く量。フィーバー中のミスはその場でフィーバー終了
 const PENALTY = { wrong: 50, falseStart: 40, anticipation: 40, timeout: 30 };
 function loseScore(kind) {
+  if (!isGame()) return;
   let note;
   if (S.fever > 0) {
     S.fever = 0;
@@ -559,7 +600,7 @@ function loseScore(kind) {
 }
 // 反応後の待ち時間にだけ鳴らす・光らせる
 function feverEffect() {
-  if (S.fever <= 0) return;
+  if (!isGame() || S.fever <= 0) return;
   const start = S.feverStart;
   S.feverStart = false;
   $('#feverText').textContent = start ? 'FEVER START!!' : 'FEVER!!';
@@ -576,6 +617,11 @@ function stopLoudEffects() {
 }
 
 function missEffect(text, kind) {
+  if (!isGame()) { // 真面目モードは文字だけ
+    setCombo(0);
+    showFeedback(`<div class="fb-label">${text}</div>`, '#ff8a80');
+    return;
+  }
   const note = loseScore(kind);
   setCombo(0);
   retrigger($('#trial'), 'shake');
@@ -590,6 +636,7 @@ function startExperiment() {
   $('#setupError').textContent = '';
   S = {
     id,
+    mode,
     date: new Date(),
     order: shuffle([...CONDITIONS]),
     condIdx: 0,
@@ -732,7 +779,7 @@ function onFalseStart(code, t) {
   state = 'iti';
   $('#fix').classList.add('hidden');
   missEffect('フライング！', 'falseStart');
-  S.log[S.log.length - 1].combo = S.combo;
+  S.log[S.log.length - 1].combo = isGame() ? S.combo : null;
   $('#msg').textContent = '光ってから押してください';
   const id = runId;
   setTimeout(() => { if (id !== runId) return; $('#msg').textContent = ''; startTrial(); }, FALSE_START_MSG_MS); // 同じ試行をやり直す
@@ -748,7 +795,7 @@ function onResponse(code, t) {
   if (rt > TIMEOUT) { record('時間切れ', null, code, t); missEffect('時間切れ…', 'timeout'); }
   else if (code !== keys[T.target]) {
     record('誤答', rt, code, t);
-    S.lamps[keys.indexOf(code)].classList.add('miss');
+    if (isGame()) S.lamps[keys.indexOf(code)].classList.add('miss');
     missEffect('ちがうキー！', 'wrong');
   } else if (rt < ANTICIPATION) {
     record('正答', rt, code, t);
@@ -764,6 +811,7 @@ function onResponse(code, t) {
       newBest = S.best[n] != null && rt < S.best[n];
       if (S.best[n] == null || rt < S.best[n]) S.best[n] = rt;
     }
+    if (!isGame()) { endTrial(); S.log[S.log.length - 1].combo = null; return; } // 正答のときは何も出さない
     S.lamps[T.target].classList.add('hit');
     addScore(level);
     burst(S.lamps[T.target], g.color, (level === 0 ? 50 : 30 - level * 3) * (S.fever > 0 ? 2 : 1));
@@ -775,8 +823,8 @@ function onResponse(code, t) {
       ${newBest ? '<div class="fb-best">自己ベスト更新！</div>' : ''}`, g.color);
   }
   feverEffect();
-  S.log[S.log.length - 1].combo = S.combo;
-  endTrial(true);
+  S.log[S.log.length - 1].combo = isGame() ? S.combo : null;
+  endTrial(isGame());
 }
 
 function onTimeout() {
@@ -784,7 +832,7 @@ function onTimeout() {
   flashToken++;
   record('時間切れ', null, null, null);
   missEffect('時間切れ…', 'timeout');
-  S.log[S.log.length - 1].combo = S.combo;
+  S.log[S.log.length - 1].combo = isGame() ? S.combo : null;
   endTrial();
 }
 
@@ -809,7 +857,9 @@ function blockDone() {
     return;
   }
   const n = currentN(), avg = average(n);
-  if (avg != null) {
+  if (avg != null && !isGame()) {
+    S.lastBlock = `<div>${n}択の本番おわり　平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　フライング ${S.falseStarts[n] || 0}回</div>`;
+  } else if (avg != null) {
     const g = blockGrade(n, avg), level = RANKS.indexOf(g);
     const up = S.prevBlockLevel != null && level < S.prevBlockLevel;
     S.prevBlockLevel = level;
@@ -901,13 +951,18 @@ function showResults() {
   html += '<tr><td>フライング</td>' + CONDITIONS.map(n => `<td>${S.falseStarts[n] || 0}回</td>`).join('') + '</tr>';
   $('#resultTable').innerHTML = html;
 
+  const avgs = CONDITIONS.map(average);
+  const maxAvg = Math.max(...avgs.filter(v => v != null), 1);
+  const bars = `<p class="dim" style="margin-bottom:0">選択肢が増えるほど遅くなる（ヒックの法則）</p>
+    <div class="bars">${CONDITIONS.map((n, i) => `<div class="b"><span>${n}択</span>
+      <div class="fill" style="width:${avgs[i] == null ? 0 : avgs[i] / maxAvg * 70}%"></div><span>${fmtAvg(avgs[i])}</span></div>`).join('')}</div>`;
+  if (!isGame()) { $('#summary').innerHTML = bars; return; }
+
   // 総合ランクなど
   const used = S.rows.filter(isUsed);
   const ranks = CONDITIONS.map(n => average(n)).map((a, i) => a == null ? RANKS.length - 1 : RANKS.indexOf(blockGrade(CONDITIONS[i], a)));
   const total = RANKS[Math.round(ranks.reduce((a, b) => a + b, 0) / ranks.length)];
   const fastest = used.length ? used.reduce((a, b) => (a.rt < b.rt ? a : b)) : null;
-  const avgs = CONDITIONS.map(average);
-  const maxAvg = Math.max(...avgs.filter(v => v != null), 1);
   $('#summary').innerHTML = `
     <div class="cards">
       <div class="card big"><div class="s">総合ランク</div><div class="v">${rankHTML(total, 'reveal')}</div>
@@ -919,9 +974,7 @@ function showResults() {
       <div class="card"><div class="s">最大コンボ</div><div class="v">${S.maxCombo}</div></div>
     </div>
     ${fastest ? `<p class="comment">${fastComment(fastest.rt)}</p>` : ''}
-    <p class="dim" style="margin-bottom:0">選択肢が増えるほど遅くなる（ヒックの法則）</p>
-    <div class="bars">${CONDITIONS.map((n, i) => `<div class="b"><span>${n}択</span>
-      <div class="fill" style="width:${avgs[i] == null ? 0 : avgs[i] / maxAvg * 70}%"></div><span>${fmtAvg(avgs[i])}</span></div>`).join('')}</div>`;
+    ${bars}`;
   sfxFanfare();
   confetti(RANKS.indexOf(total) <= 2 ? 250 : 120);
 }
@@ -940,6 +993,7 @@ function downloadCSV() {
   const lines = [
     ['被験者ID', S.id],
     ['実施日時', fmtDate(S.date)],
+    ['モード', S.mode === 'game' ? 'ゲーム' : '真面目'],
     ['実施した順番', orderText()],
     ['追加練習の回数', ...CONDITIONS.map(n => `${n}択:${S.extraPractice[n] || 0}`)],
     [],
