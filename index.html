@@ -259,7 +259,7 @@
       <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
       <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
       <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。<span class="game-only">ミスするとフィーバーゲージが大きく減り、フィーバー中なら終わってしまいます。</span></li>
-      <li>選択肢の数（1・2・4・6・8個）を変えて5回のセットを行います。各セットの前に練習が3回あります。</li>
+      <li>選択肢の数（1・2・4・6・8個）を変えて5回のセットを行います。各セットの前に練習が3回あります。本番は各セット5回成功するまで続き、ミスした回は数えずにやり直しです。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
     <p style="margin-top:20px">モード</p>
@@ -318,7 +318,7 @@
       <table id="resultTable"></table>
     </div>
     <p class="dim" style="font-size:14px">
-      ※ 単位はms（ミリ秒）。誤答・時間切れ・予測（100ms未満の反応）は平均に入れていません。（ ）内はそのときの反応時間です。
+      ※ 単位はms（ミリ秒）。誤答・時間切れ・予測（100ms未満の反応）・フライングはやり直しになり、表とCSVには入りません。
     </p>
     <div class="row">
       <button id="csvBtn" class="primary" type="button">CSVをダウンロード</button>
@@ -333,7 +333,7 @@
 // ===== 設定 =====
 const CONDITIONS = [1, 2, 4, 6, 8];
 const PRACTICE_TRIALS = 3;
-const MAIN_TRIALS = 10;
+const MAIN_TRIALS = 5;                    // 本番で成功させる回数（ミスした回は数えずにやり直し）
 const WAIT_MIN = 1000, WAIT_MAX = 3000;   // 注視点からマス点灯までの待ち時間(ms)
 const TIMEOUT = 2000;                     // 時間切れ(ms)
 const ANTICIPATION = 100;                 // これ未満は予測による反応として除外(ms)
@@ -655,6 +655,7 @@ function startExperiment() {
     practiceKind: '練習', // 練習 / 追加練習
     extraPractice: {},    // 条件ごとの追加練習の回数
     falseStarts: {},      // 条件ごとの本番のフライング回数
+    misses: {},           // 条件ごとの本番の誤答・時間切れ・予測の回数
     log: []               // 練習・フライングも含めた全試行の記録（CSV用）
   };
   initAudio();
@@ -672,7 +673,7 @@ function showRest() {
     $('#restText').innerHTML = `使うキー：${keys}<br>まず<b>練習を${PRACTICE_TRIALS}回</b>行います（記録はされません）。`;
   } else {
     $('#restTitle').textContent = `練習おわり（${n}択）`;
-    $('#restText').innerHTML = `次は<b>本番${MAIN_TRIALS}回</b>です。使うキー：${keys}`;
+    $('#restText').innerHTML = `次は<b>本番</b>です。<b>${MAIN_TRIALS}回成功</b>するまで続きます（ミスした回はやり直し）。使うキー：${keys}`;
   }
   $('#morePractice').hidden = S.phase !== 'main';
   if (S.phase === 'main' && S.extraPractice[n]) $('#restText').innerHTML += `<br><span class="dim">（追加練習 ${S.extraPractice[n]}回目おわり）</span>`;
@@ -696,6 +697,7 @@ function beginBlock() {
   const n = currentN();
   S.targets = balancedTargets(n, S.phase === 'practice' ? PRACTICE_TRIALS : MAIN_TRIALS);
   S.trialIdx = 0;
+  S.done = 0; // 本番で成功した回数
   S.lamps = buildLamps($('#trialLamps'), n);
   $('#msg').textContent = '';
   $('#fb').classList.remove('show');
@@ -706,9 +708,13 @@ function beginBlock() {
 }
 
 function updateProgress() {
-  const label = S.phase === 'practice' ? S.practiceKind : '本番';
-  $('#progress').textContent = `${currentN()}択　${label} ${S.trialIdx + 1} / ${S.targets.length}`;
-  $('#bar').style.width = (S.trialIdx / S.targets.length * 100) + '%';
+  if (S.phase === 'practice') {
+    $('#progress').textContent = `${currentN()}択　${S.practiceKind} ${S.trialIdx + 1} / ${S.targets.length}`;
+    $('#bar').style.width = (S.trialIdx / S.targets.length * 100) + '%';
+  } else {
+    $('#progress').textContent = `${currentN()}択　本番 ${S.done + 1} / ${MAIN_TRIALS}`;
+    $('#bar').style.width = (S.done / MAIN_TRIALS * 100) + '%';
+  }
 }
 
 let waitTimer = null, timeoutTimer = null, flashToken = 0;
@@ -755,7 +761,7 @@ function logTrial(result, rt, code, t) {
   S.log.push({
     set: S.condIdx + 1, n,
     phase: S.phase === 'main' ? '本番' : S.practiceKind,
-    trialNo: S.trialIdx + 1,
+    trialNo: S.phase === 'main' ? S.done + 1 : S.trialIdx + 1,
     result, rt,
     target: result === 'フライング' ? '' : KEY_LABEL[KEYMAP[n][T.target]], // フライングはまだ光っていない
     pressed: code ? KEY_LABEL[code] : '',
@@ -767,10 +773,18 @@ function logTrial(result, rt, code, t) {
 }
 
 function record(result, rt, code, t) {
-  logTrial(result === '正答' && rt < ANTICIPATION ? '予測' : result, rt, code, t);
+  const ok = result === '正答' && rt >= ANTICIPATION;
+  logTrial(result === '正答' && !ok ? '予測' : result, rt, code, t);
   S.log[S.log.length - 1].combo = null; // 反応後のコンボはあとで入れる
   if (S.phase !== 'main') return; // 平均の表には本番だけ
-  S.rows.push({ n: currentN(), trialNo: S.trialIdx + 1, result, rt });
+  const n = currentN();
+  if (ok) {
+    S.rows.push({ n, trialNo: S.done + 1, result, rt });
+    S.done++;
+  } else {
+    S.misses[n] = (S.misses[n] || 0) + 1;
+    T.retry = true; // この回は数えない。同じマスをあとのどこかでもう一度出す
+  }
 }
 
 function onFalseStart(code, t) {
@@ -846,6 +860,11 @@ function endTrial(keepLamp = false) {
   setTimeout(() => {
     if (id !== runId) return;
     if (S.fever > 0) { S.fever--; updateGauge(); }
+    if (T.retry) {
+      // 直後に同じマスが来ると読まれるので、残りの中のランダムな位置に入れる
+      const pos = S.trialIdx + 1 + Math.floor(Math.random() * (S.targets.length - S.trialIdx));
+      S.targets.splice(pos, 0, T.target);
+    }
     S.trialIdx++;
     if (S.trialIdx < S.targets.length) startTrial();
     else blockDone();
@@ -860,7 +879,7 @@ function blockDone() {
   }
   const n = currentN(), avg = average(n);
   if (avg != null && !isGame()) {
-    S.lastBlock = `<div>${n}択の本番おわり　平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　フライング ${S.falseStarts[n] || 0}回</div>`;
+    S.lastBlock = `<div>${n}択の本番おわり　平均 <b>${avg.toFixed(0)}ms</b>　ミス ${missCount(n)}回</div>`;
   } else if (avg != null) {
     const g = blockGrade(n, avg), level = RANKS.indexOf(g);
     const up = S.prevBlockLevel != null && level < S.prevBlockLevel;
@@ -868,7 +887,7 @@ function blockDone() {
     S.lastBlock = `<div class="dim">${n}択のランク</div>
       <div>${rankHTML(g, 'reveal')}</div>
       ${up ? '<div class="rankup">▲ ランクアップ！</div>' : ''}
-      <div>平均 <b>${avg.toFixed(0)}ms</b>　正答 ${accuracy(n)}　フライング ${S.falseStarts[n] || 0}回　最速 <b>${Math.round(S.best[n])}ms</b></div>`;
+      <div>平均 <b>${avg.toFixed(0)}ms</b>　ミス ${missCount(n)}回　最速 <b>${Math.round(S.best[n])}ms</b></div>`;
     sfxFanfare();
   }
   S.condIdx++;
@@ -904,16 +923,12 @@ function average(n) {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 
-function accuracy(n) {
-  const rows = S.rows.filter(r => r.n === n);
-  return `${rows.filter(isUsed).length} / ${rows.length}`;
-}
+// 本番のミス（誤答・時間切れ・予測・フライング）の合計
+const missCount = n => (S.misses[n] || 0) + (S.falseStarts[n] || 0);
 
 // セットの平均に、ミス（誤答・時間切れ・予測・フライング）1回につき60msを足してランクを決める
 function blockGrade(n, avg) {
-  const rows = S.rows.filter(r => r.n === n);
-  const misses = rows.length - rows.filter(isUsed).length + (S.falseStarts[n] || 0);
-  return grade(n, avg + misses * 60);
+  return grade(n, avg + missCount(n) * 60);
 }
 
 function fastComment(ms) {
@@ -950,7 +965,7 @@ function showResults() {
     }).join('') + '</tr>';
   }
   html += '<tr class="avg"><td>平均</td>' + CONDITIONS.map(n => `<td>${fmtAvg(average(n))}</td>`).join('') + '</tr>';
-  html += '<tr><td>フライング</td>' + CONDITIONS.map(n => `<td>${S.falseStarts[n] || 0}回</td>`).join('') + '</tr>';
+  html += '<tr><td>ミス</td>' + CONDITIONS.map(n => `<td>${missCount(n)}回</td>`).join('') + '</tr>';
   $('#resultTable').innerHTML = html;
 
   const avgs = CONDITIONS.map(average);
@@ -972,7 +987,7 @@ function showResults() {
           `<div class="${RANKS.indexOf(g) >= RANKS.indexOf(total) ? 'reached' : ''} ${g === total ? 'me' : ''}"
             style="${RANKS.indexOf(g) >= RANKS.indexOf(total) ? `background:${g.color}` : ''}">${g.name}</div>`).join('')}</div></div>
       <div class="card"><div class="s">最速</div><div class="v">${fastest ? Math.round(fastest.rt) + 'ms' : '－'}</div><div class="s">${fastest ? fastest.n + '択' : ''}</div></div>
-      <div class="card"><div class="s">正答率</div><div class="v">${S.rows.length ? Math.round(used.length / S.rows.length * 100) : 0}%</div></div>
+      <div class="card"><div class="s">正答率</div><div class="v">${Math.round(used.length / Math.max(1, used.length + CONDITIONS.reduce((a, n) => a + missCount(n), 0)) * 100)}%</div></div>
       <div class="card"><div class="s">最大コンボ</div><div class="v">${S.maxCombo}</div></div>
     </div>
     ${fastest ? `<p class="comment">${fastComment(fastest.rt)}</p>` : ''}
@@ -1003,14 +1018,13 @@ function downloadCSV() {
   ];
   for (let i = 1; i <= MAIN_TRIALS; i++) lines.push([i, ...CONDITIONS.map(n => cellText(findRow(n, i)))]);
   lines.push(['平均', ...CONDITIONS.map(n => fmtAvg(average(n)))]);
-  lines.push(['フライング(回)', ...CONDITIONS.map(n => S.falseStarts[n] || 0)]);
-  lines.push([], ['試行ごとの記録（練習・フライングも含む）']);
-  lines.push(['通し番号', 'セット', '条件', '段階', '試行', '結果', '反応時間(ms)', '光ったキー', '押したキー',
-    '待ち時間(ms)', '＋から押すまで(ms)', '反応後のコンボ', 'フィーバー中', '平均に使用', '時刻']);
-  S.log.forEach((L, i) => lines.push([
-    i + 1, L.set, `${L.n}択`, L.phase, L.trialNo, L.result, ms1(L.rt), L.target, L.pressed,
-    ms1(L.wait), ms1(L.sinceFix), L.combo ?? '', L.fever ? '○' : '',
-    L.phase === '本番' && L.result === '正答' ? '○' : '', fmtClock(L.clock)
+  // 試行ごとの記録。ミス（誤答・時間切れ・予測・フライング）は入れない
+  lines.push([], ['試行ごとの記録（成功した回のみ。練習も含む）']);
+  lines.push(['通し番号', 'セット', '条件', '段階', '試行', '反応時間(ms)', '光ったキー', '押したキー',
+    '待ち時間(ms)', '＋から押すまで(ms)', '反応後のコンボ', 'フィーバー中', '時刻']);
+  S.log.filter(L => L.result === '正答').forEach((L, i) => lines.push([
+    i + 1, L.set, `${L.n}択`, L.phase, L.trialNo, ms1(L.rt), L.target, L.pressed,
+    ms1(L.wait), ms1(L.sinceFix), L.combo ?? '', L.fever ? '○' : '', fmtClock(L.clock)
   ]));
   const text = lines.map(l => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
   const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' });
