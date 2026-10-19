@@ -259,7 +259,7 @@
       <li>使うキーに指を軽くのせたまま（押さずに）、画面中央の「＋」を見て待ちます。光るタイミングは毎回ちがいます。</li>
       <li>光ったら、そのキーを押します。光ってから押すまでの時間を測ります。</li>
       <li>光る前にキーを押すと「フライング」になり、その回はやり直しです。<span class="game-only">ミスするとフィーバーゲージが大きく減り、フィーバー中なら終わってしまいます。</span></li>
-      <li>選択肢の数（1・2・4・8個）を変えて4回のセットを行います。各セットの前に練習が3回あります。</li>
+      <li>選択肢の数（1・2・4・6・8個）を変えて5回のセットを行います。各セットの前に練習が3回あります。</li>
       <li>指はホームポジション（左手の人差し指を <span class="key">F</span>、右手の人差し指を <span class="key">J</span>）に置いてください。</li>
     </ul>
     <p style="margin-top:20px">モード</p>
@@ -331,7 +331,7 @@
 'use strict';
 
 // ===== 設定 =====
-const CONDITIONS = [1, 2, 4, 8];
+const CONDITIONS = [1, 2, 4, 6, 8];
 const PRACTICE_TRIALS = 3;
 const MAIN_TRIALS = 10;
 const WAIT_MIN = 1000, WAIT_MAX = 3000;   // 注視点からマス点灯までの待ち時間(ms)
@@ -349,6 +349,7 @@ const KEYMAP = {
   1: ['KeyF'],
   2: ['KeyF', 'KeyJ'],
   4: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'],
+  6: ['KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL'],
   8: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon']
 };
 const ALL_CODES = new Set(Object.keys(KEY_LABEL));
@@ -358,6 +359,7 @@ const GRADE = {
   1: [170, 200, 230, 270, 320, 380],
   2: [230, 270, 310, 360, 420, 500],
   4: [290, 340, 390, 450, 520, 600],
+  6: [320, 370, 425, 485, 560, 645],
   8: [350, 400, 460, 520, 600, 690]
 };
 // 上から順に高いランク。いちばん下でも「プロ」
